@@ -23,6 +23,7 @@ export function ConfirmDialog(props: {
       content={<ConfirmDialogContent dialog={dialog} />}
       fallbackPlacements={POPOVER_FALLBACK_PLACEMENTS}
       open
+      tone="default"
       placement="top"
       portal
       preventOverflow
@@ -74,6 +75,7 @@ function ConfirmDialogContent(props: {dialog: DocumentActionConfirmDialogProps})
             text={cancelButtonText || 'Cancel'}
           />
           <Button
+            autoFocus
             icon={confirmButtonIcon}
             onClick={onConfirm}
             text={confirmButtonText || 'Confirm'}

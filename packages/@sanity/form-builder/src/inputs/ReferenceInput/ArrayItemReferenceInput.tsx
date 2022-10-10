@@ -9,12 +9,13 @@ import React, {
   useRef,
   useState,
 } from 'react'
-import {isValidationErrorMarker, isValidationMarker, Reference} from '@sanity/types'
+import {isValidationErrorMarker, isValidationMarker, Reference, SchemaType} from '@sanity/types'
 import {
   EllipsisVerticalIcon,
   LaunchIcon as OpenInNewTabIcon,
   SyncIcon as ReplaceIcon,
   TrashIcon,
+  CopyIcon as DuplicateIcon,
 } from '@sanity/icons'
 import {concat, Observable, of} from 'rxjs'
 import {catchError, distinctUntilChanged, filter, map, scan, switchMap, tap} from 'rxjs/operators'
@@ -36,12 +37,19 @@ import {
   useForwardedRef,
   useToast,
 } from '@sanity/ui'
-import {FormField, FormFieldValidationStatus, IntentLink} from '@sanity/base/components'
-import {FieldPresence} from '@sanity/base/presence'
+import {
+  FormField,
+  FormFieldValidationStatus,
+  IntentLink,
+  PreviewCard,
+} from '@sanity/base/components'
+import {FieldPresence, GlobalPresence} from '@sanity/base/presence'
 import {getPublishedId} from '@sanity/base/_internal'
 import {useObservableCallback} from 'react-rx'
 import {uuid} from '@sanity/uuid'
 import {useId} from '@reach/auto-id'
+import styled from 'styled-components'
+
 import PatchEvent, {set, setIfMissing, unset} from '../../PatchEvent'
 import {EMPTY_ARRAY} from '../../utils/empty'
 import {useDidUpdate} from '../../hooks/useDidUpdate'
@@ -50,6 +58,10 @@ import {isNonNullable} from '../../utils/isNonNullable'
 import {AlertStrip} from '../../AlertStrip'
 import {RowWrapper} from '../arrays/ArrayOfObjectsInput/item/components/RowWrapper'
 import {DragHandle} from '../arrays/common/DragHandle'
+import {InsertEvent} from '../arrays/ArrayOfObjectsInput/types'
+import randomKey from '../arrays/common/randomKey'
+import {InsertMenu} from '../arrays/ArrayOfObjectsInput/InsertMenu'
+import {useOnClickOutside} from '../../hooks/useOnClickOutside'
 import {BaseInputProps, CreateOption, SearchState} from './types'
 import {OptionPreview} from './OptionPreview'
 import {useReferenceInfo} from './useReferenceInfo'
@@ -57,8 +69,12 @@ import {PreviewReferenceValue} from './PreviewReferenceValue'
 import {CreateButton} from './CreateButton'
 import {ReferenceAutocomplete} from './ReferenceAutocomplete'
 import {AutocompleteContainer} from './AutocompleteContainer'
-import {useOnClickOutside} from './utils/useOnClickOutside'
-import {PreviewCard} from './PreviewCard'
+
+const StyledPreviewCard = styled(PreviewCard)`
+  /* this is a hack to avoid layout jumps while previews are loading
+  there's probably better ways of solving this */
+  min-height: 36px;
+`
 
 const INITIAL_SEARCH_STATE: SearchState = {
   hits: [],
@@ -68,6 +84,8 @@ const INITIAL_SEARCH_STATE: SearchState = {
 export interface Props extends BaseInputProps {
   value: OptionalRef
   isSortable: boolean
+  insertableTypes?: SchemaType[]
+  onInsert?: (event: InsertEvent) => void
 }
 
 const NO_FILTER = () => true
@@ -97,6 +115,7 @@ export const ArrayItemReferenceInput = forwardRef(function ReferenceInput(
     liveEdit,
     onSearch,
     onChange,
+    insertableTypes,
     focusPath = EMPTY_ARRAY,
     onFocus,
     presence,
@@ -104,6 +123,7 @@ export const ArrayItemReferenceInput = forwardRef(function ReferenceInput(
     isSortable,
     level,
     onBlur,
+    onInsert,
     selectedState,
     editReferenceLinkComponent: EditReferenceLink,
     onEditReference,
@@ -130,6 +150,26 @@ export const ArrayItemReferenceInput = forwardRef(function ReferenceInput(
     onEditReference({id, type: option.type, template: option.template})
     onFocus?.([])
   }
+
+  const handleDuplicate = useCallback(() => {
+    onInsert?.({
+      item: {...value, _key: randomKey()},
+      position: 'after',
+      path: [{_key: value._key}],
+      edit: false,
+    })
+  }, [onInsert, value])
+
+  const handleInsert = useCallback(
+    (pos: 'before' | 'after') => {
+      onInsert?.({
+        item: {_type: type.name, _key: randomKey()},
+        position: pos,
+        path: [{_key: value._key}],
+      })
+    },
+    [onInsert, type.name, value._key]
+  )
 
   const handleChange = useCallback(
     (id: string) => {
@@ -318,12 +358,13 @@ export const ArrayItemReferenceInput = forwardRef(function ReferenceInput(
   const renderOption = useCallback(
     (option) => {
       const id = option.hit.draft?._id || option.hit.published?._id
+
       return (
-        <Card as="button" type="button" radius={2}>
+        <PreviewCard as="button" type="button" radius={2}>
           <Box paddingX={3} paddingY={1}>
-            <OptionPreview type={type} id={id} getReferenceInfo={getReferenceInfoMemo} />
+            <OptionPreview getReferenceInfo={getReferenceInfoMemo} id={id} type={type} />
           </Box>
-        </Card>
+        </PreviewCard>
       )
     },
     [type, getReferenceInfoMemo]
@@ -450,7 +491,7 @@ export const ArrayItemReferenceInput = forwardRef(function ReferenceInput(
           <Box flex={1}>
             <Flex align="center">
               {hasRef ? (
-                <PreviewCard
+                <StyledPreviewCard
                   flex={1}
                   padding={1}
                   paddingRight={3}
@@ -474,9 +515,8 @@ export const ArrayItemReferenceInput = forwardRef(function ReferenceInput(
                     value={value}
                     referenceInfo={loadableReferenceInfo}
                     type={type}
-                    selected={selected}
                   />
-                </PreviewCard>
+                </StyledPreviewCard>
               ) : (
                 <Card
                   flex={1}
@@ -495,7 +535,7 @@ export const ArrayItemReferenceInput = forwardRef(function ReferenceInput(
                   </Box>
                 </Card>
               )}
-              <Inline>
+              <Inline marginLeft={!readOnly && presence.length > 0 ? 2 : undefined}>
                 {!readOnly && presence.length > 0 && (
                   <Box marginLeft={1}>
                     <FieldPresence presence={presence} maxAvatars={1} />
@@ -550,6 +590,8 @@ export const ArrayItemReferenceInput = forwardRef(function ReferenceInput(
                           onFocus?.(['_ref'])
                         }}
                       />
+                      <MenuItem text="Duplicate" icon={DuplicateIcon} onClick={handleDuplicate} />
+                      <InsertMenu onInsert={handleInsert} types={insertableTypes} />
                     </>
                   )}
                   {!readOnly && hasRef && <MenuDivider />}

@@ -2,7 +2,7 @@ import {
   unstable_useTemplatePermissions as useUnstableTemplatePermissions,
   useDocumentType,
 } from '@sanity/base/hooks'
-import {LegacyLayerProvider, useZIndex} from '@sanity/base/components'
+import {useZIndex} from '@sanity/base/components'
 import {ChangeConnectorRoot} from '@sanity/base/change-indicators'
 import {getTemplateById} from '@sanity/base/initial-value-templates'
 import {
@@ -32,7 +32,6 @@ import {LoadingPane} from '../loading'
 import {ChangesPanel} from './changesPanel'
 import {DocumentPanel} from './documentPanel'
 import {DocumentOperationResults} from './DocumentOperationResults'
-import {InspectDialog} from './inspectDialog'
 import {DocumentActionShortcuts} from './keyboardShortcuts'
 import {DocumentStatusBar} from './statusBar'
 import {useDocumentPane} from './useDocumentPane'
@@ -68,7 +67,7 @@ export const DocumentPane = memo(function DocumentPane(props: DocumentPaneProvid
   const [templatePermissions, isTemplatePermissionsLoading] = useUnstableTemplatePermissions(
     getNewDocumentOptions()
   )
-  const isLoaded = isDocumentLoaded && isTemplatePermissionsLoading
+  const isLoaded = isDocumentLoaded && !isTemplatePermissionsLoading
 
   const providerProps = useMemo(() => {
     return isLoaded && documentType && options.type !== documentType
@@ -179,7 +178,6 @@ function mergeDocumentType(
 function InnerDocumentPane() {
   const {
     changesOpen,
-    displayed,
     documentSchema,
     documentType,
     handleFocus,
@@ -188,6 +186,7 @@ function InnerDocumentPane() {
     inspectOpen,
     paneKey,
     value,
+    totalReferenceCount,
   } = useDocumentPane()
   const {features} = useDeskTool()
   const {collapsed: layoutCollapsed} = usePaneLayout()
@@ -197,28 +196,26 @@ function InnerDocumentPane() {
   const [actionsBoxElement, setActionsBoxElement] = useState<HTMLDivElement | null>(null)
   const footerRect = useElementRect(footerElement)
   const footerH = footerRect?.height
+  const documentIsReferenced = totalReferenceCount !== undefined && totalReferenceCount > 0
 
   const documentPanel = useMemo(
-    () => <DocumentPanel footerHeight={footerH || null} rootElement={rootElement} />,
-    [footerH, rootElement]
+    () => (
+      <DocumentPanel
+        footerHeight={footerH || null}
+        rootElement={rootElement}
+        isInspectOpen={inspectOpen}
+      />
+    ),
+    [footerH, rootElement, inspectOpen]
   )
 
   const footer = useMemo(
     () => (
-      <PaneFooter ref={setFooterElement}>
+      <PaneFooter isReferencedDocument={documentIsReferenced} ref={setFooterElement}>
         <DocumentStatusBar actionsBoxRef={setActionsBoxElement} />
       </PaneFooter>
     ),
-    []
-  )
-
-  const inspectDialog = useMemo(
-    () => (
-      <LegacyLayerProvider zOffset="fullscreen">
-        {inspectOpen && <InspectDialog value={displayed || value} />}
-      </LegacyLayerProvider>
-    ),
-    [displayed, value, inspectOpen]
+    [documentIsReferenced]
   )
 
   const changesPanel = useMemo(() => {
@@ -292,7 +289,6 @@ function InnerDocumentPane() {
         </DialogProvider>
         {footer}
         <DocumentOperationResults />
-        {inspectDialog}
       </>
     )
   }, [
@@ -304,7 +300,6 @@ function InnerDocumentPane() {
     footer,
     handleFocus,
     handleHistoryOpen,
-    inspectDialog,
     layoutCollapsed,
     paneKey,
     value,

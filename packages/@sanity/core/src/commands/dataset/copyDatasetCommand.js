@@ -3,6 +3,7 @@ import {Observable} from 'rxjs'
 import chalk from 'chalk'
 import promptForDatasetName from '../../actions/dataset/datasetNamePrompt'
 import validateDatasetName from '../../actions/dataset/validateDatasetName'
+import listDatasetCopyJobs from '../../actions/dataset/listDatasetCopyJobs'
 import debug from '../../debug'
 
 const helpText = `
@@ -10,6 +11,9 @@ Options
   --detach Start the copy without waiting for it to finish
   --attach <job-id> Attach to the running copy process to show progress
   --skip-history Don't preserve document history on copy
+  --list Lists all dataset copy jobs corresponding to a certain criteria.
+  --offset Start position in the list of jobs. Default 0. With --list.
+  --limit Maximum number of jobs returned. Default 10. Maximum 1000. With --list.
 
 Examples
   sanity dataset copy
@@ -18,13 +22,31 @@ Examples
   sanity dataset copy --skip-history <source-dataset> <target-dataset>
   sanity dataset copy --detach <source-dataset> <target-dataset>
   sanity dataset copy --attach <job-id>
+  sanity dataset copy --list
+  sanity dataset copy --list --offset=2
+  sanity dataset copy --list --offset=2 --limit=10
 `
 
 const progress = (url) => {
   return new Observable((observer) => {
-    const progressSource = new EventSource(url)
+    let progressSource = new EventSource(url)
+    let stopped = false
 
     function onError(error) {
+      if (progressSource) {
+        progressSource.close()
+      }
+
+      debug(`Error received: ${error}`)
+      if (stopped) {
+        return
+      }
+      observer.next({type: 'reconnect'})
+      progressSource = new EventSource(url)
+    }
+
+    function onChannelError(error) {
+      stopped = true
       progressSource.close()
       observer.error(error)
     }
@@ -32,20 +54,20 @@ const progress = (url) => {
     function onMessage(event) {
       const data = JSON.parse(event.data)
       if (data.state === 'failed') {
-        debug(`Job failed. Data: ${event}`)
+        debug('Job failed. Data: %o', event)
         observer.error(event)
       } else if (data.state === 'completed') {
-        debug(`Job succeeded. Data: ${event}`)
+        debug('Job succeeded. Data: %o', event)
         onComplete()
       } else {
-        debug(`Job progressed. Data: ${event}`)
+        debug(`Job progressed. Data: %o`, event)
         observer.next(data)
       }
     }
 
     function onComplete() {
       progressSource.removeEventListener('error', onError)
-      progressSource.removeEventListener('channelError', onError)
+      progressSource.removeEventListener('channel_error', onChannelError)
       progressSource.removeEventListener('job', onMessage)
       progressSource.removeEventListener('done', onComplete)
       progressSource.close()
@@ -53,34 +75,34 @@ const progress = (url) => {
     }
 
     progressSource.addEventListener('error', onError)
-    progressSource.addEventListener('channelError', onError)
+    progressSource.addEventListener('channel_error', onChannelError)
     progressSource.addEventListener('job', onMessage)
     progressSource.addEventListener('done', onComplete)
   })
 }
 
 const followProgress = (jobId, client, output) => {
-  const spinner = output
-    .spinner({
-      text: `Copy in progress: 0%`,
-    })
-    .start()
+  let currentProgress = 0
 
+  const spinner = output.spinner({}).start()
   const listenUrl = client.getUrl(`jobs/${jobId}/listen`)
 
   debug(`Listening to ${listenUrl}`)
 
   progress(listenUrl).subscribe({
     next: (event) => {
-      const eventProgress = event.progress ? event.progress : 0
+      if (typeof event.progress === 'number') {
+        currentProgress = event.progress
+      }
 
-      spinner.text = `Copy in progress: ${eventProgress}%`
+      spinner.text = `Copy in progress: ${currentProgress}%`
     },
-    error: () => {
-      spinner.fail('There was an error copying the dataset.')
+    error: (event) => {
+      spinner.fail()
+      throw new Error(`There was an error copying dataset: ${event.data}`)
     },
     complete: () => {
-      spinner.succeed(`Copy finished.`)
+      spinner.succeed('Copy finished.')
     },
   })
 }
@@ -90,11 +112,17 @@ export default {
   group: 'dataset',
   signature: '[SOURCE_DATASET] [TARGET_DATASET]',
   helpText,
-  description: 'Copies a dataset including its assets to a new dataset',
+  description:
+    'Manages dataset copying, including starting a new copy job, listing copy jobs and following the progress of a running copy job',
   action: async (args, context) => {
     const {apiClient, output, prompt} = context
     const flags = args.extOptions
     const client = apiClient()
+
+    if (flags.list) {
+      await listDatasetCopyJobs(flags, context)
+      return
+    }
 
     if (flags.attach) {
       const jobId = flags.attach
@@ -128,9 +156,6 @@ export default {
 
     const targetDatasetName = await (targetDataset ||
       promptForDatasetName(prompt, {message: 'Target dataset name:'}))
-    if (existingDatasets.includes(targetDatasetName)) {
-      throw new Error(`Target dataset "${targetDatasetName}" already exists`)
-    }
 
     const err = validateDatasetName(targetDatasetName)
     if (err) {
@@ -151,12 +176,15 @@ export default {
         `Copying dataset ${chalk.green(sourceDatasetName)} to ${chalk.green(targetDatasetName)}...`
       )
 
-      if (flags.detach) {
-        output.print(`Copy initiated.`)
+      if (!shouldSkipHistory) {
         output.print(
-          `\nRun:\n\n    sanity dataset copy --attach ${response.jobId}\n\nto watch attach`
+          `Note: You can run this command with flag '--skip-history'. The flag will reduce copy time in larger datasets.`
         )
+      }
 
+      output.print(`Job ${chalk.green(response.jobId)} started`)
+
+      if (flags.detach) {
         return
       }
 

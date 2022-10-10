@@ -1,4 +1,3 @@
-import {ChangeIndicatorWithProvidedFullPath} from '@sanity/base/change-indicators'
 import {hues} from '@sanity/color'
 import {Box, Flex, Theme} from '@sanity/ui'
 import styled, {css} from 'styled-components'
@@ -51,6 +50,10 @@ function textBlockStyle(props: TextBlockStyleProps & {theme: Theme}) {
       --marker-bg-color: ${color.muted.critical.hovered.bg};
     }
 
+    &[data-read-only] {
+      --card-fg-color: ${color.input.default.readOnly.fg};
+    }
+
     & [data-list-prefix] {
       position: absolute;
       margin-left: -4.5rem;
@@ -96,8 +99,12 @@ function textBlockStyle(props: TextBlockStyleProps & {theme: Theme}) {
 
 export const TextRoot = styled.div<TextBlockStyleProps>(textBlockStyle)
 
-export const TextBlockFlexWrapper = styled(Flex)`
+// Because of a weird bug in Google Chrome regarding the @sanity/ui Flex component and spellchecking,
+// this is set to be a Box with 'display: flex'. Using the Flex component here results in Chrome
+// using 20% CPU when idle when spellchecking is on for some reason.
+export const TextBlockFlexWrapper = styled(Box)`
   position: relative;
+  display: flex;
 `
 
 export const ListPrefixWrapper = styled.div`
@@ -105,18 +112,14 @@ export const ListPrefixWrapper = styled.div`
   white-space: nowrap;
 `
 
+export const BlockExtrasContainer = styled(Box)`
+  user-select: none;
+`
+
 export const BlockActionsOuter = styled(Box)`
   line-height: 0;
   width: 25px;
   position: relative;
-  user-select: none;
-
-  /* Without this, select all (CMD-A) will not work properly */
-  /* when the editor is in non-fullscreen mode. */
-  &:before {
-    content: ' ';
-    font-size: 0;
-  }
 `
 
 export const BlockActionsInner = styled(Flex)(({theme}: {theme: Theme}) => {
@@ -134,6 +137,7 @@ export const BlockActionsInner = styled(Flex)(({theme}: {theme: Theme}) => {
   const negativeTop = 0 - (buttonHeight - capHeight2) / 2
 
   return css`
+    user-select: none;
     position: absolute;
     right: 0;
     top: ${negativeTop}px;
@@ -149,27 +153,23 @@ export const TextFlex = styled(Flex)<{$level?: number}>`
   padding-left: ${({$level}) => ($level ? $level * 32 : 0)}px;
 `
 
-export const ChangeIndicatorWrapper = styled.div(({theme}: {theme: Theme}) => {
-  const {space} = theme.sanity
+export const ChangeIndicatorWrapper = styled.div<{$hasChanges: boolean}>(
+  ({theme, $hasChanges}: {theme: Theme; $hasChanges: boolean}) => {
+    const {space} = theme.sanity
 
-  return css`
-    position: absolute;
-    width: ${space[2]}px;
-    right: 0;
-    top: -${space[1]}px;
-    bottom: -${space[1]}px;
-    padding-left: ${space[1]}px;
-    user-select: none;
-  `
-})
+    return css`
+      position: absolute;
+      width: ${space[2]}px;
+      right: 0;
+      top: -${space[1]}px;
+      bottom: -${space[1]}px;
+      padding-left: ${space[1]}px;
+      user-select: none;
 
-export const StyledChangeIndicatorWithProvidedFullPath = styled(
-  ChangeIndicatorWithProvidedFullPath
-)`
-  width: 1px;
-  height: 100%;
-
-  & > div {
-    height: 100%;
+      ${!$hasChanges &&
+      css`
+        display: none;
+      `}
+    `
   }
-`
+)

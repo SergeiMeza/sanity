@@ -1,3 +1,23 @@
+import {ExperimentalSearchPath} from '@sanity/types'
+
+/**
+ * @internal
+ */
+export interface SearchTerms {
+  query: string
+  types: SearchableType[]
+}
+
+/**
+ * @internal
+ */
+export interface SearchableType {
+  name: string
+  title?: string
+  // eslint-disable-next-line camelcase
+  __experimental_search: ExperimentalSearchPath[]
+}
+
 /**
  * @internal
  */
@@ -54,7 +74,21 @@ export interface WeightedSearchOptions {
   unique?: boolean
 }
 
+/**
+ * @internal
+ */
 export interface SearchOptions {
+  comments?: string[]
   includeDrafts?: boolean
   limit?: number
+  offset?: number
+  skipSortByScore?: boolean
+  sort?: SearchSort
+}
+
+export type SortDirection = 'asc' | 'desc'
+
+export type SearchSort = {
+  direction: SortDirection
+  field: string
 }

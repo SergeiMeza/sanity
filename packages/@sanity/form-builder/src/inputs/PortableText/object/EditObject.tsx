@@ -1,6 +1,6 @@
 /* eslint-disable react/no-find-dom-node */
 
-import React, {useState, useEffect, useMemo, useLayoutEffect, useCallback} from 'react'
+import React, {useState, useEffect, useMemo, useCallback} from 'react'
 import {isKeySegment, Path, Marker} from '@sanity/types'
 import {FormFieldPresence} from '@sanity/base/presence'
 import {
@@ -15,7 +15,7 @@ import {
 import {debounce} from 'lodash'
 import {applyAll} from '../../../simplePatch'
 import {PatchEvent} from '../../../PatchEvent'
-import {ObjectEditData} from '../types'
+import {FIXME, ObjectEditData} from '../types'
 import {Patch} from '../../../patch/types'
 import {DefaultObjectEditing} from './renderers/DefaultObjectEditing'
 import {PopoverObjectEditing} from './renderers/PopoverObjectEditing'
@@ -34,6 +34,7 @@ export interface EditObjectProps {
   onClose: () => void
   onFocus: (path: Path) => void
   presence: FormFieldPresence[]
+  scrollElement: HTMLElement
   readOnly: boolean
   value: PortableTextBlock[] | undefined
 }
@@ -48,17 +49,18 @@ export const EditObject = (props: EditObjectProps) => {
     onClose,
     onFocus,
     presence,
+    scrollElement,
     readOnly,
     value,
   } = props
   const editor = usePortableTextEditor()
   const ptFeatures = useMemo(() => PortableTextEditor.getPortableTextFeatures(editor), [editor])
-  const [_object, type] = useMemo(() => findObjectAndType(objectEditData, value, ptFeatures), [
-    objectEditData,
-    ptFeatures,
-    value,
-  ])
-  const [object, setObject] = useState(_object)
+  const [objectFromValue, type] = useMemo(
+    () => findObjectAndType(objectEditData, value, ptFeatures),
+    [objectEditData, ptFeatures, value]
+  )
+
+  const [object, setObject] = useState(objectFromValue)
   const [timeoutInstance, setTimeoutInstance] = useState(undefined)
   const formBuilderPath = objectEditData && objectEditData.formBuilderPath
   const kind = objectEditData && objectEditData.kind
@@ -75,9 +77,9 @@ export const EditObject = (props: EditObjectProps) => {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useLayoutEffect(() => {
-    setObject(_object)
-  }, [_object])
+  useEffect(() => {
+    setObject(objectFromValue)
+  }, [objectFromValue])
 
   const cancelThrottle = useMemo(
     () =>
@@ -101,9 +103,7 @@ export const EditObject = (props: EditObjectProps) => {
     const length = patches.length
     const _patches = compactPatches(PATCHES.get(editor).slice(0, length))
     PATCHES.set(editor, PATCHES.get(editor).slice(length))
-    setTimeout(() => {
-      onChange(PatchEvent.from(_patches), formBuilderPath)
-    })
+    onChange(PatchEvent.from(_patches as FIXME), formBuilderPath)
     cancelThrottle()
   }, [cancelThrottle, editor, formBuilderPath, onChange, timeoutInstance])
 
@@ -130,8 +130,9 @@ export const EditObject = (props: EditObjectProps) => {
   ) {
     return (
       <PopoverObjectEditing
-        focusPath={focusPath}
+        elementRef={objectEditData.editorHTMLElementRef}
         editorPath={objectEditData.editorPath}
+        focusPath={focusPath}
         markers={markers}
         object={object}
         onBlur={onBlur}
@@ -141,7 +142,8 @@ export const EditObject = (props: EditObjectProps) => {
         path={formBuilderPath}
         presence={presence}
         readOnly={readOnly}
-        type={type}
+        scrollElement={scrollElement}
+        type={type as FIXME}
         width={modalOption.width}
       />
     )
@@ -159,7 +161,7 @@ export const EditObject = (props: EditObjectProps) => {
       path={formBuilderPath}
       presence={presence}
       readOnly={readOnly}
-      type={type}
+      type={type as FIXME}
       width={modalOption.width}
     />
   )
@@ -175,7 +177,7 @@ function findObjectAndType(
   }
   const {editorPath, formBuilderPath, kind} = objectEditData
   let object: PortableTextChild
-  let type: Type
+  let type: FIXME
 
   // Try finding the relevant block
   const blockKey =

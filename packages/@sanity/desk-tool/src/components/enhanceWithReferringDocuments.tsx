@@ -1,6 +1,9 @@
 // @todo: remove the following line when part imports has been removed from this file
 ///<reference types="@sanity/types/parts" />
 
+///////////////////////////////////////////////////////////////
+/// THIS FILE IS TO BE REMOVED! BACKWARDS COMPATIBILITY ETC ///
+///////////////////////////////////////////////////////////////
 import {SanityDocument} from '@sanity/types'
 import React from 'react'
 import {WithReferringDocuments} from 'part:@sanity/base/with-referring-documents'

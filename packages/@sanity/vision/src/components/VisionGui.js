@@ -5,26 +5,17 @@ import queryString from 'query-string'
 import SplitPane from 'react-split-pane'
 import {PlayIcon, StopIcon, CopyIcon} from '@sanity/icons'
 import isHotkey from 'is-hotkey'
-import {
-  Flex,
-  Card,
-  Stack,
-  Box,
-  Hotkeys,
-  Label,
-  Select,
-  Text,
-  TextInput,
-  Tooltip,
-  Grid,
-} from '@sanity/ui'
+import {Flex, Card, Stack, Box, Hotkeys, Select, Text, TextInput, Tooltip, Grid} from '@sanity/ui'
 import studioClient from 'part:@sanity/base/client'
 import {FormFieldValidationStatus} from '@sanity/base/components'
+import config from 'config:@sanity/vision'
 import {storeState, getState} from '../util/localState'
 import parseApiQueryString from '../util/parseApiQueryString'
+import prefixApiVersion from '../util/prefixApiVersion'
 import tryParseParams from '../util/tryParseParams'
 import encodeQueryString from '../util/encodeQueryString'
 import {apiVersions} from '../apiVersions'
+import {ResizeObserver} from '../util/resizeObserver'
 import DelayedSpinner from './DelayedSpinner'
 import QueryEditor from './QueryEditor'
 import ParamsEditor from './ParamsEditor'
@@ -39,6 +30,7 @@ import {
   InputBackgroundContainer,
   InputBackgroundContainerLeft,
   InputContainer,
+  StyledLabel,
   ResultOuterContainer,
   ResultInnerContainer,
   ResultContainer,
@@ -80,6 +72,18 @@ const handleCopyUrl = () => {
   }
 }
 
+function calculatePaneSizeOptions(rootHeight) {
+  return {
+    defaultSize: rootHeight / 2,
+    size: rootHeight > 550 ? undefined : rootHeight * 0.4,
+    allowResize: rootHeight > 550,
+    minSize: Math.min(170, Math.max(170, rootHeight / 2)),
+    maxSize: rootHeight > 650 ? rootHeight * 0.7 : rootHeight * 0.6,
+  }
+}
+
+const DEFAULT_API_VERSION = '2021-03-25'
+
 class VisionGui extends React.PureComponent {
   constructor(props) {
     super(props)
@@ -89,7 +93,7 @@ class VisionGui extends React.PureComponent {
 
     const firstDataset = this.props.datasets[0] && this.props.datasets[0].name
     const defaultDataset = studioClient.config().dataset || firstDataset
-    const defaultApiVersion = `v${studioClient.config().apiVersion || '1'}`
+    const defaultApiVersion = prefixApiVersion(`${config.defaultApiVersion || DEFAULT_API_VERSION}`)
 
     let dataset = getState('dataset', defaultDataset)
     let apiVersion = getState('apiVersion', defaultApiVersion)
@@ -103,12 +107,17 @@ class VisionGui extends React.PureComponent {
     }
 
     this._visionRoot = React.createRef()
+    this._resizeListener = React.createRef()
     this._queryEditorContainer = React.createRef()
     this._paramsEditorContainer = React.createRef()
 
     this.client = studioClient.withConfig({apiVersion, dataset})
 
     this.subscribers = {}
+
+    // Initial root height without header
+    const bodyHeight = document.body.getBoundingClientRect().height - 60
+
     this.state = {
       paramValidationMarkers: [],
       validParams: true,
@@ -116,6 +125,7 @@ class VisionGui extends React.PureComponent {
       params: lastParams && tryParseParams(lastParams),
       rawParams: lastParams,
       queryInProgress: false,
+      paneSizeOptions: calculatePaneSizeOptions(bodyHeight),
       dataset,
       apiVersion,
     }
@@ -130,17 +140,41 @@ class VisionGui extends React.PureComponent {
     this.handleParamsChange = this.handleParamsChange.bind(this)
     this.handlePaste = this.handlePaste.bind(this)
     this.handleKeyDown = this.handleKeyDown.bind(this)
+    this.handleResize = this.handleResize.bind(this)
   }
 
   componentDidMount() {
     window.document.addEventListener('paste', this.handlePaste)
     window.document.addEventListener('keydown', this.handleKeyDown)
+
+    this.handleResizeListen()
   }
 
   componentWillUnmount() {
     this.cancelQuery()
     this.cancelListener()
     this.cancelEventListener()
+    this.cancelResizeListener()
+  }
+
+  handleResizeListen() {
+    this._resizeListener.current = new ResizeObserver(this.handleResize)
+    this._resizeListener.current.observe(this._visionRoot.current)
+  }
+
+  handleResize(entries) {
+    const entry = entries?.[0]
+
+    this.setState((prevState) => ({
+      ...prevState,
+      paneSizeOptions: calculatePaneSizeOptions(entry.contentRect.height),
+    }))
+  }
+
+  cancelResizeListener() {
+    if (this._resizeListener.current) {
+      this._resizeListener.current.disconnect()
+    }
   }
 
   handlePaste(evt) {
@@ -403,6 +437,7 @@ class VisionGui extends React.PureComponent {
       queryInProgress,
       executedQuery,
       listenInProgress,
+      paneSizeOptions,
       queryTime,
       e2eTime,
       listenMutations,
@@ -432,12 +467,12 @@ class VisionGui extends React.PureComponent {
       >
         <GlobalCodeMirrorStyle />
         <Header paddingX={3} paddingY={2}>
-          <Grid columns={12}>
+          <Grid columns={[6, 6, 12]}>
             {/* Dataset selector */}
             <Box padding={1} column={2}>
               <Stack>
                 <Card paddingY={2}>
-                  <Label>Dataset</Label>
+                  <StyledLabel>Dataset</StyledLabel>
                 </Card>
                 <Select value={dataset} onChange={this.handleChangeDataset}>
                   {datasets.map((ds) => (
@@ -451,7 +486,7 @@ class VisionGui extends React.PureComponent {
             <Box padding={1} column={2}>
               <Stack>
                 <Card paddingY={2}>
-                  <Label>API version</Label>
+                  <StyledLabel>API version</StyledLabel>
                 </Card>
                 <Select
                   value={customApiVersion ? 'other' : apiVersion}
@@ -472,7 +507,7 @@ class VisionGui extends React.PureComponent {
               <Box padding={1} column={2}>
                 <Stack>
                   <Card paddingY={2}>
-                    <Label>Custom API version</Label>
+                    <StyledLabel>Custom API version</StyledLabel>
                   </Card>
 
                   <TextInput
@@ -489,10 +524,10 @@ class VisionGui extends React.PureComponent {
               <Box padding={1} flex={1} column={customApiVersion ? 6 : 8}>
                 <Stack>
                   <Card paddingY={2}>
-                    <Label>
+                    <StyledLabel>
                       Query URL&nbsp;
                       <QueryCopyLink onClick={handleCopyUrl}>[copy]</QueryCopyLink>
-                    </Label>
+                    </StyledLabel>
                   </Card>
                   <TextInput
                     readOnly
@@ -509,14 +544,33 @@ class VisionGui extends React.PureComponent {
           </Grid>
         </Header>
         <SplitpaneContainer flex={1}>
-          <SplitPane split="vertical" minSize={150} defaultSize={400}>
+          <SplitPane split="vertical" minSize={280} defaultSize={400} maxSize={-400}>
             <Box height="stretch" flex={1}>
-              <SplitPane split="horizontal" defaultSize={'50%'}>
+              {/* 
+                  The way react-split-pane handles the sizes is kind of finicky and not clear. What the props above does is:
+                  - It sets the initial size of the panes to 1/2 of the total available height of the container
+                  - Sets the minimum size of a pane whatever is bigger of 1/2 of the total available height of the container, or 170px
+                  - The max size is set to either 60% or 70% of the available space, depending on if the container height is above 650px
+                  - Disables resizing when total height is below 500, since it becomes really cumbersome to work with the panes then
+                  - The "primary" prop (https://github.com/tomkp/react-split-pane#primary) tells the second pane to shrink or grow by the available space
+                  - Disables resize if the container height is less then 500px
+                  This should ensure that we mostly avoid a pane to take up all the room, and for the controls to not be eaten up by the pane
+                */}
+              <SplitPane
+                className="sidebarPanes"
+                split="horizontal"
+                defaultSize={paneSizeOptions.defaultSize}
+                size={paneSizeOptions.size}
+                allowResize={paneSizeOptions.allowResize}
+                minSize={paneSizeOptions.minSize}
+                maxSize={paneSizeOptions.maxSize}
+                primary="first"
+              >
                 <InputContainer display="flex" ref={this._queryEditorContainer}>
                   <Card flex={1}>
                     <InputBackgroundContainerLeft>
                       <Flex marginLeft={3}>
-                        <Label muted>Query</Label>
+                        <StyledLabel muted>Query</StyledLabel>
                       </Flex>
                     </InputBackgroundContainerLeft>
                     <QueryEditor
@@ -531,7 +585,7 @@ class VisionGui extends React.PureComponent {
                   <Card flex={1} tone={validParams ? 'default' : 'critical'}>
                     <InputBackgroundContainerLeft>
                       <Flex marginLeft={3}>
-                        <Label muted>Params</Label>
+                        <StyledLabel muted>Params</StyledLabel>
                         {paramValidationMarkers.length > 0 && (
                           <Box marginLeft={2}>
                             <FormFieldValidationStatus
@@ -613,7 +667,7 @@ class VisionGui extends React.PureComponent {
                   <Result padding={3} paddingTop={5} overflow="auto" $isInvalid={error}>
                     <InputBackgroundContainer>
                       <Box marginLeft={3}>
-                        <Label muted>Result</Label>
+                        <StyledLabel muted>Result</StyledLabel>
                       </Box>
                     </InputBackgroundContainer>
                     {queryInProgress && (

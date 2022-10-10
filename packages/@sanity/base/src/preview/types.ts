@@ -1,4 +1,4 @@
-import {Reference} from '@sanity/types'
+import {PreviewConfig, Reference, SchemaType} from '@sanity/types'
 
 export type {SortOrdering, PrepareViewOptions} from '@sanity/types'
 
@@ -7,17 +7,31 @@ export type Id = string
 export type {Reference}
 export type Document = {_id: string; [key: string]: unknown}
 
-export type Value = Document | Record<string, unknown> | Reference | Id
+export type Previewable = Document | Record<string, unknown> | Reference | Id
 
 // @todo: unify with content path from @sanity/types
 export type Path = FieldName[]
 export type Selection = [Id, Path[]]
 export type FieldName = string
 
+export interface AvailabilityResponse {
+  omitted: {id: string; reason: 'existence' | 'permission'}[]
+}
+
 export enum AvailabilityReason {
   READABLE = 'READABLE',
   PERMISSION_DENIED = 'PERMISSION_DENIED',
   NOT_FOUND = 'NOT_FOUND',
+}
+
+export interface PreviewableType {
+  fields?: {name: string; type: SchemaType}[]
+  preview?: PreviewConfig
+}
+
+export interface ApiConfig {
+  projectId: string
+  dataset: string
 }
 
 export type DocumentAvailability =

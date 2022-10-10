@@ -1,8 +1,10 @@
-import {pick, toPath, keyBy, startCase, isPlainObject} from 'lodash'
+import {castArray, flatMap, keyBy, pick, startCase} from 'lodash'
 import createPreviewGetter from '../preview/createPreviewGetter'
 import guessOrderingConfig from '../ordering/guessOrderingConfig'
-import resolveSearchConfig from '../resolveSearchConfig'
+import {normalizeSearchConfigs} from '../searchConfig/normalize'
+import resolveSearchConfig from '../searchConfig/resolve'
 import {lazyGetter} from './utils'
+
 import {DEFAULT_OVERRIDEABLE_FIELDS} from './constants'
 
 const OVERRIDABLE_FIELDS = [
@@ -12,30 +14,6 @@ const OVERRIDABLE_FIELDS = [
   'blockEditor',
   'icon',
 ]
-
-const normalizeSearchConfig = (configs) => {
-  if (!Array.isArray(configs)) {
-    throw new Error(
-      'The search config of a document type must be an array of search config objects'
-    )
-  }
-  return configs.map((conf) => {
-    if (conf === 'defaults') {
-      return conf
-    }
-    if (!isPlainObject(conf)) {
-      throw new Error('Search config must be an object of {path: string, weight: number}')
-    }
-    if (typeof conf.path !== 'string') {
-      throw new Error('The path property of the search field declaration must be a string')
-    }
-    return {
-      weight: 'weight' in conf ? conf.weight : 1,
-      path: toPath(conf.path),
-      mapWith: typeof conf.mapWith === 'string' ? conf.mapWith : undefined,
-    }
-  })
-}
 
 export const ObjectType = {
   get() {
@@ -55,10 +33,11 @@ export const ObjectType = {
       options: options,
       orderings: subTypeDef.orderings || guessOrderingConfig(subTypeDef),
       fields: subTypeDef.fields.map((fieldDef) => {
-        const {name, fieldset, ...rest} = fieldDef
+        const {name, fieldset, group, ...rest} = fieldDef
 
         const compiledField = {
           name,
+          group,
           fieldset,
         }
 
@@ -75,6 +54,10 @@ export const ObjectType = {
       return createFieldsets(subTypeDef, parsed.fields)
     })
 
+    lazyGetter(parsed, 'groups', () => {
+      return createFieldsGroups(subTypeDef, parsed.fields)
+    })
+
     lazyGetter(parsed, 'preview', createPreviewGetter(subTypeDef))
 
     lazyGetter(
@@ -82,12 +65,12 @@ export const ObjectType = {
       '__experimental_search',
       () => {
         const userProvidedSearchConfig = subTypeDef.__experimental_search
-          ? normalizeSearchConfig(subTypeDef.__experimental_search)
+          ? normalizeSearchConfigs(subTypeDef.__experimental_search)
           : null
 
         if (userProvidedSearchConfig) {
           return userProvidedSearchConfig.map((entry) =>
-            entry === 'defaults' ? resolveSearchConfig(subTypeDef) : entry
+            entry === 'defaults' ? normalizeSearchConfigs(subTypeDef) : entry
           )
         }
         return resolveSearchConfig(parsed)
@@ -126,12 +109,13 @@ export const ObjectType = {
 function createFieldsets(typeDef, fields) {
   const fieldsetsDef = typeDef.fieldsets || []
   const fieldsets = fieldsetsDef.map((fieldset) => {
-    const {name, title, description, options, hidden, readOnly} = fieldset
+    const {name, title, description, options, group, hidden, readOnly} = fieldset
     return {
       name,
       title,
       description,
       options,
+      group,
       fields: [],
       hidden,
       readOnly,
@@ -156,4 +140,58 @@ function createFieldsets(typeDef, fields) {
       return {single: true, field}
     })
     .filter(Boolean)
+}
+
+function createFieldsGroups(typeDef, fields) {
+  const groupsDef = typeDef.groups || []
+  const groups = groupsDef.map((group) => {
+    const {name, title, description, icon, readOnly, hidden} = group
+    return {
+      name,
+      title,
+      description,
+      icon,
+      readOnly,
+      default: group.default,
+      hidden,
+      fields: [],
+    }
+  })
+
+  const defaultGroups = groups.filter((group) => group.default)
+
+  if (defaultGroups.length > 1) {
+    // Throw if you have multiple default field groups defined
+    throw new Error(
+      `You currently have ${defaultGroups.length} default field groups defined for type '${
+        typeDef.name ? startCase(typeDef.name) : typeDef.title ?? ``
+      }', but only 1 is supported`
+    )
+  }
+
+  const groupsByName = keyBy(groups, 'name')
+
+  fields.forEach((field) => {
+    if (field.group) {
+      const fieldGroupNames = castArray(field.group)
+
+      if (fieldGroupNames.length > 0) {
+        fieldGroupNames.forEach((fieldGroupName) => {
+          const currentGroup = groupsByName[fieldGroupName]
+
+          if (!currentGroup) {
+            throw new Error(
+              `Field group '${fieldGroupName}' is not defined in schema for type '${
+                typeDef.name ?? typeDef.title ?? ``
+              }'`
+            )
+          }
+
+          currentGroup.fields.push(field)
+        })
+      }
+    }
+  })
+
+  return flatMap(groupsByName).filter((group) => group.fields.length > 0)
 }

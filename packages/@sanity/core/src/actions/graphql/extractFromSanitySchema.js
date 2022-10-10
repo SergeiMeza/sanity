@@ -1,12 +1,12 @@
 const {uniqBy, startCase} = require('lodash')
-const generateHelpUrl = require('@sanity/generate-help-url')
+const {generateHelpUrl} = require('@sanity/generate-help-url')
 const schemaCompiler = require('@sanity/schema')
 const oneline = require('oneline')
 const helpUrls = require('./helpUrls')
 const SchemaError = require('./SchemaError')
 
 const Schema = schemaCompiler.default || schemaCompiler
-const skipTypes = ['document', 'reference']
+const skipTypes = ['document', 'reference', 'crossDatasetReference']
 const allowedJsonTypes = ['object', 'array']
 const disallowedCustomizedMembers = ['object', 'array', 'image', 'file', 'block']
 const scalars = ['string', 'number', 'boolean']
@@ -29,7 +29,8 @@ function isBaseType(type) {
     type.name !== type.jsonType &&
     allowedJsonTypes.includes(type.jsonType) &&
     !skipTypes.includes(type.name) &&
-    !isReference(type)
+    !isReference(type) &&
+    !isCrossDatasetReference(type)
   )
 }
 
@@ -50,16 +51,24 @@ function isArrayOfBlocks(typeDef) {
   return (type.of || []).some(hasBlockParent)
 }
 
-function isReference(typeDef) {
+function isType(typeDef, typeName) {
   let type = typeDef
   while (type) {
-    if (type.name === 'reference' || (type.type && type.type.name === 'reference')) {
+    if (type.name === typeName || (type.type && type.type.name === typeName)) {
       return true
     }
 
     type = type.type
   }
   return false
+}
+
+function isReference(typeDef) {
+  return isType(typeDef, 'reference')
+}
+
+function isCrossDatasetReference(typeDef) {
+  return isType(typeDef, 'crossDatasetReference')
 }
 
 function extractFromSanitySchema(sanitySchema, extractOptions = {}) {

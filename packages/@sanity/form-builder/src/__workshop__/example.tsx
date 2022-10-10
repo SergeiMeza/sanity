@@ -1,5 +1,5 @@
 import {Card, Grid, Stack, useToast} from '@sanity/ui'
-import {useBoolean, useSelect, useScope} from '@sanity/ui-workshop'
+import {useBoolean, useProps, useSelect} from '@sanity/ui-workshop'
 import React, {useCallback, useEffect, useMemo, useState} from 'react'
 import {Patcher} from '@sanity/mutator'
 import type {SchemaType, ObjectField} from '@sanity/types'
@@ -22,7 +22,7 @@ import {TypeTester, FilterFieldInput, FormDebugger, FormBuilderTester} from './_
 const patchChannel = FormBuilder.createPatchChannel()
 
 export default function ExampleStory() {
-  const {setPropValue} = useScope()
+  const {setPropValue} = useProps()
   const ref = React.useRef()
   const toast = useToast()
   const isUseMutator = useBoolean('Use Mutator', false, 'Props')
@@ -34,6 +34,7 @@ export default function ExampleStory() {
   const isTypeTester = useBoolean('Type Performance Tester', false, 'Props')
   const includeUnknownField = useBoolean('Unknown Field in Value', false, 'Props')
   const isDebug = useBoolean('Debug', false, 'Props')
+  const isChangesOpen = useBoolean('Changes Open', false, 'Props')
   const selectedSchemaKey = useSelect(
     'Schema',
     schemaListOptions,
@@ -74,10 +75,16 @@ export default function ExampleStory() {
 
     setFieldFilterSource(handledValue)
   }, [])
-  const handleChangeFieldFilter = useCallback(() => {
-    setFieldFilterValue(fieldFilterSource)
-    toast.push({status: 'success', title: `Updated field filter`})
-  }, [fieldFilterSource])
+  const handleChangeFieldFilter = useCallback(
+    (value) => {
+      setFieldFilterValue(value)
+      toast.push({
+        status: 'success',
+        title: value === `` ? `Cleared field filter` : `Updated field filter`,
+      })
+    },
+    [toast]
+  )
 
   const memoizedFieldFilter = useMemo(() => {
     if (!fieldFilterValue || fieldFilterValue.length === 0) {
@@ -148,8 +155,13 @@ export default function ExampleStory() {
                 onFilter={handleChangeFieldFilter}
               />
             )}
-            {isTypeTester && <TypeTester />}
-            <FormBuilderTester patchChannel={patchChannel} schema={schema} value={documentValue}>
+            {isTypeTester && <TypeTester readOnly={isReadOnly} />}
+            <FormBuilderTester
+              patchChannel={patchChannel}
+              schema={schema}
+              value={documentValue}
+              isChangesOpen={isChangesOpen}
+            >
               <FormBuilderInput
                 type={documentType}
                 onChange={isUseMutator ? handleChangeMutator : handleChange}

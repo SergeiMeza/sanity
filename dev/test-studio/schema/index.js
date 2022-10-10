@@ -3,7 +3,12 @@ import createSchema from 'part:@sanity/base/schema-creator'
 import codeInputType from 'part:@sanity/form-builder/input/code/schema'
 
 // Test documents with standard inputs
-import arrays, {topLevelArrayType, topLevelPrimitiveArrayType} from './standard/arrays'
+import arrays, {
+  topLevelArrayType,
+  topLevelPrimitiveArrayType,
+  arrayPreviewSelect,
+  arrayExperimentalSearch,
+} from './standard/arrays'
 import booleans from './standard/booleans'
 import date from './standard/date'
 import datetime from './standard/datetime'
@@ -15,6 +20,7 @@ import objects, {myObject} from './standard/objects'
 import {ptAllTheBellsAndWhistlesType} from './standard/portableText/allTheBellsAndWhistles'
 import blocks from './standard/portableText/blocks'
 import richTextObject from './standard/portableText/richTextObject'
+import codeinputdebug from './standard/portableText/codesnippet'
 import simpleBlock from './standard/portableText/simpleBlock'
 import simpleBlockNote from './standard/portableText/simpleBlockNote'
 import simpleBlockNoteBody from './standard/portableText/simpleBlockNoteBody'
@@ -35,6 +41,7 @@ import customNumber from './debug/customNumber'
 import documentActions from './debug/documentActions'
 import empty from './debug/empty'
 import experiment from './debug/experiment'
+import experimentalOmnisearchVisibilityTest from './debug/experimentalOmnisearchVisibilityTest'
 import fieldsets from './debug/fieldsets'
 import {
   fieldValidationInferReproSharedObject,
@@ -66,6 +73,11 @@ import typeWithNoToplevelStrings from './debug/typeWithNoToplevelStrings'
 import uploads from './debug/uploads'
 import validation, {validationArraySuperType} from './debug/validation'
 import {withDocumentTestSchemaType} from './debug/withDocumentTest'
+import {withParentTestSchemaType} from './debug/withParentTest'
+import fieldGroups from './debug/fieldGroups'
+import fieldGroupsDefault from './debug/fieldGroupsDefault'
+import fieldGroupsMany from './debug/fieldGroupsMany'
+import fieldGroupsWithValidation from './debug/fieldGroupsWithValidation'
 
 // Test documents with official plugin inputs
 import code from './plugins/code'
@@ -86,6 +98,8 @@ import species from './species'
 // CI documents
 import conditionalFieldset from './ci/conditionalFieldset'
 import validationTest from './ci/validationCI'
+import crossDatasetReference, {crossDatasetSubtype} from './standard/crossDatasetReference'
+import {circularCrossDatasetReferenceTest} from './debug/circularCrossDatasetReference'
 
 export default createSchema({
   name: 'test-examples',
@@ -111,6 +125,7 @@ export default createSchema({
     emails,
     empty,
     experiment,
+    experimentalOmnisearchVisibilityTest,
     fieldValidationInferReproDoc,
     fieldValidationInferReproSharedObject,
     fieldsets,
@@ -149,9 +164,13 @@ export default createSchema({
     recursiveObjectTest,
     recursivePopover,
     references,
+    crossDatasetReference,
+    crossDatasetSubtype,
+    circularCrossDatasetReferenceTest,
     reservedFieldNames,
     review,
     richTextObject,
+    codeinputdebug,
     select,
     simpleBlock,
     simpleBlockNote,
@@ -165,6 +184,8 @@ export default createSchema({
     texts,
     topLevelArrayType,
     topLevelPrimitiveArrayType,
+    arrayPreviewSelect,
+    arrayExperimentalSearch,
     typeWithNoToplevelStrings,
     uploads,
     urls,
@@ -172,5 +193,10 @@ export default createSchema({
     validationArraySuperType,
     validationTest,
     withDocumentTestSchemaType,
+    withParentTestSchemaType,
+    fieldGroups,
+    fieldGroupsDefault,
+    fieldGroupsMany,
+    fieldGroupsWithValidation,
   ]),
 })

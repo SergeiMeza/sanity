@@ -1,9 +1,9 @@
-import React, {useCallback, useEffect, useState} from 'react'
+import React, {useCallback} from 'react'
 import {useId} from '@reach/auto-id'
 import {Path, Marker, SchemaType} from '@sanity/types'
 import {FormFieldPresence, PresenceOverlay} from '@sanity/base/presence'
-import {PortableTextBlock, Type, PortableTextChild} from '@sanity/portable-text-editor'
-import {Box, Dialog, useLayer} from '@sanity/ui'
+import {PortableTextBlock, PortableTextChild} from '@sanity/portable-text-editor'
+import {Box, Dialog, PortalProvider, usePortal} from '@sanity/ui'
 import {FormBuilderInput} from '../../../../FormBuilderInput'
 import {PatchEvent} from '../../../../PatchEvent'
 import {DIALOG_WIDTH_TO_UI_WIDTH} from './constants'
@@ -20,7 +20,7 @@ interface DefaultObjectEditingProps {
   path: Path
   presence: FormFieldPresence[]
   readOnly: boolean
-  type: Type
+  type: SchemaType
   width?: ModalWidth
 }
 
@@ -41,33 +41,12 @@ export function DefaultObjectEditing(props: DefaultObjectEditingProps) {
   } = props
 
   const dialogId = useId()
+  const portal = usePortal()
 
   const handleChange = useCallback((patchEvent: PatchEvent): void => onChange(patchEvent, path), [
     onChange,
     path,
   ])
-
-  const [rootElement, setRootElement] = useState<HTMLDivElement | null>(null)
-
-  const {isTopLayer} = useLayer()
-
-  const handleClose = useCallback(() => {
-    if (isTopLayer) onClose()
-  }, [isTopLayer, onClose])
-
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (event.key === 'Escape') handleClose()
-    },
-    [handleClose]
-  )
-
-  useEffect(() => {
-    if (rootElement) rootElement.addEventListener('keydown', handleKeyDown)
-    return () => {
-      if (rootElement) rootElement.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [handleKeyDown, rootElement])
 
   return (
     <Dialog
@@ -75,24 +54,26 @@ export function DefaultObjectEditing(props: DefaultObjectEditingProps) {
       onClose={onClose}
       header={type.title}
       portal="default"
-      ref={setRootElement}
       width={DIALOG_WIDTH_TO_UI_WIDTH[width]}
+      onClickOutside={onClose}
     >
       <PresenceOverlay margins={[0, 0, 1, 0]}>
         <Box padding={4}>
-          <FormBuilderInput
-            focusPath={focusPath}
-            level={0}
-            markers={markers}
-            onBlur={onBlur}
-            onChange={handleChange}
-            onFocus={onFocus}
-            path={path}
-            presence={presence}
-            readOnly={readOnly || type.readOnly}
-            type={type as SchemaType}
-            value={object}
-          />
+          <PortalProvider element={portal.elements.default}>
+            <FormBuilderInput
+              focusPath={focusPath}
+              level={0}
+              markers={markers}
+              onBlur={onBlur}
+              onChange={handleChange}
+              onFocus={onFocus}
+              path={path}
+              presence={presence}
+              readOnly={readOnly || type.readOnly}
+              type={type}
+              value={object}
+            />
+          </PortalProvider>
         </Box>
       </PresenceOverlay>
     </Dialog>

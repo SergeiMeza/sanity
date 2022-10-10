@@ -15,6 +15,7 @@ module.exports = {
   '@sanity/base': './packages/@sanity/base/src/_exports',
 
   '@sanity/desk-tool': './packages/@sanity/desk-tool/src/_exports',
+  '@sanity/dashboard': './packages/@sanity/dashboard/src',
 
   '@sanity/schema': './packages/@sanity/schema/src/_exports',
 
@@ -28,9 +29,7 @@ module.exports = {
     './packages/@sanity/form-builder/src/FormBuilderInput',
   '@sanity/imagetool': './packages/@sanity/imagetool/src',
   '@sanity/initial-value-templates': './packages/@sanity/initial-value-templates/src',
-  '@sanity/portable-text-editor': './packages/@sanity/portable-text-editor/src',
   '@sanity/mutator': './packages/@sanity/mutator/src',
-  '@sanity/client': './packages/@sanity/client/src/sanityClient',
   '@sanity/resolver': './packages/@sanity/resolver/src/resolver',
 
   '@sanity/react-hooks': './packages/@sanity/react-hooks/src',

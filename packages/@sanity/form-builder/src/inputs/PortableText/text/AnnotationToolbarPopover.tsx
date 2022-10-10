@@ -11,6 +11,7 @@ import {
 } from '@sanity/ui'
 import styled from 'styled-components'
 import {EditIcon, TrashIcon} from '@sanity/icons'
+import {PortableTextEditor, usePortableTextEditor} from '@sanity/portable-text-editor'
 
 const ToolbarPopover = styled(Popover)`
   &[data-popper-reference-hidden='true'] {
@@ -27,7 +28,7 @@ interface AnnotationToolbarPopoverProps {
   scrollElement: HTMLElement
   annotationElement: HTMLElement
   textElement: HTMLElement
-  onEdit: () => void
+  onEdit: (event: React.MouseEvent<HTMLButtonElement>) => void
   onDelete: (event: React.MouseEvent<HTMLButtonElement>) => void
   title: string
 }
@@ -39,7 +40,10 @@ export function AnnotationToolbarPopover(props: AnnotationToolbarPopoverProps) {
   const [selection, setSelection] = useState(null)
   const isClosingRef = useRef<boolean>(false)
   const rangeRef = useRef<Range | null>(null)
+  const editButtonRef = useRef<HTMLButtonElement>()
+  const isTabbing = useRef<boolean>(false)
   const {sanity} = useTheme()
+  const editor = usePortableTextEditor()
 
   const popoverScheme = sanity.color.dark ? 'light' : 'dark'
 
@@ -54,7 +58,7 @@ export function AnnotationToolbarPopover(props: AnnotationToolbarPopoverProps) {
         return cursorRect
       },
     }
-  }, [cursorRect])
+  }, [cursorRect]) as HTMLElement
 
   useEffect(() => {
     if (!open) {
@@ -78,11 +82,26 @@ export function AnnotationToolbarPopover(props: AnnotationToolbarPopoverProps) {
   useGlobalKeyDown(
     useCallback(
       (event) => {
-        if (event.key === 'Escape' && open) {
+        if (!open) {
+          return
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          event.stopPropagation()
           setOpen(false)
+          isTabbing.current = false
+          PortableTextEditor.focus(editor)
+        }
+        if (event.key === 'Tab') {
+          if (!isTabbing.current) {
+            event.preventDefault()
+            event.stopPropagation()
+            editButtonRef.current.focus()
+            isTabbing.current = true
+          }
         }
       },
-      [open]
+      [editor, open]
     )
   )
 
@@ -113,7 +132,11 @@ export function AnnotationToolbarPopover(props: AnnotationToolbarPopoverProps) {
     if (!selection) return
     if (isClosingRef.current) return
     const {anchorNode, focusNode} = selection
-
+    // Safari would close the popover by loosing range when button is focused.
+    // If we are focused and currently tabbing to the action buttons, just return here.
+    if (isTabbing.current) {
+      return
+    }
     if (annotationElement && annotationElement.contains(anchorNode) && anchorNode === focusNode) {
       const range = window.getSelection().getRangeAt(0)
       const rect = range.getBoundingClientRect()
@@ -122,14 +145,18 @@ export function AnnotationToolbarPopover(props: AnnotationToolbarPopoverProps) {
 
       if (rect) {
         setCursorRect(rect)
-        setOpen(true)
       }
+      setOpen(true)
     } else {
       setOpen(false)
       setCursorRect(null)
       rangeRef.current = null
     }
   }, [selection, annotationElement])
+
+  if (!open) {
+    return null
+  }
 
   return (
     <ToolbarPopover
@@ -143,16 +170,16 @@ export function AnnotationToolbarPopover(props: AnnotationToolbarPopoverProps) {
                 {title}
               </Text>
             </Box>
-            <Button icon={EditIcon} mode="bleed" onClick={onEdit} padding={2} />
+            <Button ref={editButtonRef} icon={EditIcon} mode="bleed" onClick={onEdit} padding={2} />
             <Button icon={TrashIcon} mode="bleed" padding={2} onClick={onDelete} tone="critical" />
           </Inline>
         </Box>
       }
       fallbackPlacements={POPOVER_FALLBACK_PLACEMENTS}
-      open={cursorElement && open}
+      open={open}
       placement="top"
       portal="editor"
-      referenceElement={cursorElement as HTMLElement}
+      referenceElement={cursorElement}
       scheme={popoverScheme}
     />
   )

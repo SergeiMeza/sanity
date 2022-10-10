@@ -12,6 +12,7 @@ import {resolveInitialValueForType} from '@sanity/initial-value-templates'
 import {Box, Button, Flex, Hotkeys, Text, Tooltip, useElementRect, useToast} from '@sanity/ui'
 import {CollapseIcon, ExpandIcon} from '@sanity/icons'
 import styled, {css} from 'styled-components'
+import {useRovingFocus} from '@sanity/base/components'
 import {ActionMenu} from './ActionMenu'
 import {BlockStyleSelect} from './BlockStyleSelect'
 import {InsertMenu} from './InsertMenu'
@@ -32,23 +33,20 @@ const RootFlex = styled(Flex)`
 `
 
 const StyleSelectBox = styled(Box)`
-  min-width: 8em;
+  width: 8em;
 `
 
 const StyleSelectFlex = styled(Flex)`
   border-right: 1px solid var(--card-border-color);
 `
 
-const ActionMenuBox = styled(Box)<{$withMaxWidth: boolean}>`
-  ${({$withMaxWidth}) =>
-    $withMaxWidth &&
+const ActionMenuBox = styled(Box)<{$withInsertMenu: boolean}>`
+  ${({$withInsertMenu}) =>
+    $withInsertMenu &&
     css`
       max-width: max-content;
+      border-right: 1px solid var(--card-border-color);
     `}
-`
-
-const InsertMenuBox = styled(Box)`
-  border-left: 1px solid var(--card-border-color);
 `
 
 const FullscreenButtonBox = styled(Box)`
@@ -56,8 +54,6 @@ const FullscreenButtonBox = styled(Box)`
 `
 
 const SLOW_INITIAL_VALUE_LIMIT = 300
-
-const preventDefault = (e: React.SyntheticEvent) => e.preventDefault()
 
 const IS_MAC =
   typeof window != 'undefined' && /Mac|iPod|iPhone|iPad/.test(window.navigator.platform)
@@ -69,7 +65,6 @@ const InnerToolbar = memo(function InnerToolbar({
   insertMenuItems,
   isFullscreen,
   onToggleFullscreen,
-  readOnly,
 }: {
   actionGroups: PTEToolbarActionGroup[]
   blockStyles: BlockStyleItem[]
@@ -77,7 +72,6 @@ const InnerToolbar = memo(function InnerToolbar({
   insertMenuItems: BlockItem[]
   isFullscreen: boolean
   onToggleFullscreen: () => void
-  readOnly: boolean
 }) {
   const actionsLen = actionGroups.reduce((acc, x) => acc + x.actions.length, 0)
   const showActionMenu = actionsLen > 0
@@ -87,47 +81,45 @@ const InnerToolbar = memo(function InnerToolbar({
 
   const collapsed = rootElementRect ? rootElementRect?.width < 400 : false
 
+  useRovingFocus({
+    rootElement: rootElement,
+  })
+
   return (
-    <RootFlex
-      align="center"
-      // Ensure the editor doesn't lose focus when interacting
-      // with the toolbar (prevent focus click events)
-      onMouseDown={preventDefault}
-      onKeyPress={preventDefault}
-      ref={setRootElement}
-    >
+    <RootFlex align="center" ref={setRootElement}>
       <StyleSelectFlex flex={collapsed ? 1 : undefined}>
         <StyleSelectBox padding={isFullscreen ? 2 : 1}>
           <BlockStyleSelect disabled={disabled} items={blockStyles} />
         </StyleSelectBox>
       </StyleSelectFlex>
 
-      {showActionMenu && (
-        <ActionMenuBox
-          flex={collapsed ? undefined : 1}
-          padding={isFullscreen ? 2 : 1}
-          $withMaxWidth={showInsertMenu}
-        >
-          <ActionMenu
-            disabled={disabled}
-            collapsed={collapsed}
-            groups={actionGroups}
-            isFullscreen={isFullscreen}
-          />
-        </ActionMenuBox>
-      )}
+      <Flex flex={1}>
+        {showActionMenu && (
+          <ActionMenuBox
+            flex={collapsed ? undefined : 1}
+            padding={isFullscreen ? 2 : 1}
+            $withInsertMenu={showInsertMenu}
+          >
+            <ActionMenu
+              disabled={disabled}
+              collapsed={collapsed}
+              groups={actionGroups}
+              isFullscreen={isFullscreen}
+            />
+          </ActionMenuBox>
+        )}
 
-      {showInsertMenu && (
-        <InsertMenuBox flex={collapsed ? undefined : 1} padding={isFullscreen ? 2 : 1}>
-          <InsertMenu
-            disabled={disabled}
-            collapsed={collapsed}
-            items={insertMenuItems}
-            isFullscreen={isFullscreen}
-          />
-        </InsertMenuBox>
-      )}
-
+        {showInsertMenu && (
+          <Box flex={collapsed ? undefined : 1} padding={isFullscreen ? 2 : 1}>
+            <InsertMenu
+              disabled={disabled}
+              collapsed={collapsed}
+              items={insertMenuItems}
+              isFullscreen={isFullscreen}
+            />
+          </Box>
+        )}
+      </Flex>
       <FullscreenButtonBox padding={isFullscreen ? 2 : 1}>
         <Tooltip
           content={
@@ -160,7 +152,7 @@ export function Toolbar(props: ToolbarProps) {
   const features = useFeatures()
   const editor = usePortableTextEditor()
   const selection = usePortableTextEditorSelection()
-  const disabled = !selection
+  const disabled = readOnly || !selection
 
   const {push} = useToast()
 
@@ -207,8 +199,8 @@ export function Toolbar(props: ToolbarProps) {
     async (type: Type) => {
       const initialValue = await resolveInitialValue(type)
       const path = PortableTextEditor.insertBlock(editor, type, initialValue)
-
-      setTimeout(() => onFocus(path.concat(FOCUS_TERMINATOR)), 0)
+      PortableTextEditor.blur(editor)
+      onFocus(path.concat(FOCUS_TERMINATOR))
     },
     [editor, onFocus, resolveInitialValue]
   )
@@ -217,8 +209,8 @@ export function Toolbar(props: ToolbarProps) {
     async (type: Type) => {
       const initialValue = await resolveInitialValue(type)
       const path = PortableTextEditor.insertChild(editor, type, initialValue)
-
-      setTimeout(() => onFocus(path.concat(FOCUS_TERMINATOR)), 0)
+      PortableTextEditor.blur(editor)
+      onFocus(path.concat(FOCUS_TERMINATOR))
     },
     [editor, onFocus, resolveInitialValue]
   )
@@ -240,7 +232,6 @@ export function Toolbar(props: ToolbarProps) {
       insertMenuItems={insertMenuItems}
       isFullscreen={isFullscreen}
       onToggleFullscreen={onToggleFullscreen}
-      readOnly={readOnly}
     />
   )
 }

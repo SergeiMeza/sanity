@@ -1,6 +1,6 @@
 import {FieldPresence, FormFieldPresence} from '@sanity/base/presence'
 import React, {useCallback, useMemo} from 'react'
-import {Box, Card, CardTone, Flex} from '@sanity/ui'
+import {Box, Button, Card, Menu, Flex, MenuButton, MenuItem} from '@sanity/ui'
 import {FormFieldValidationStatus} from '@sanity/base/components'
 import {
   Marker,
@@ -9,12 +9,16 @@ import {
   isValidationErrorMarker,
   isValidationWarningMarker,
 } from '@sanity/types'
+import {TrashIcon, EllipsisVerticalIcon, CopyIcon as DuplicateIcon} from '@sanity/icons'
+import {useId} from '@reach/auto-id'
+import {useConditionalReadOnly} from '@sanity/base/_internal'
 import {DragHandle} from '../common/DragHandle'
 import PatchEvent, {set} from '../../../PatchEvent'
 import {ItemWithMissingType} from '../ArrayOfObjectsInput/item/ItemWithMissingType'
 import {FormBuilderInput} from '../../../FormBuilderInput'
-import {ConfirmDeleteButton} from '../ArrayOfObjectsInput/ConfirmDeleteButton'
+import {InsertMenu} from '../ArrayOfObjectsInput/InsertMenu'
 import getEmptyValue from './getEmptyValue'
+import {PrimitiveValue} from './types'
 
 const dragHandle = <DragHandle paddingX={1} paddingY={3} />
 
@@ -22,6 +26,8 @@ type Props = {
   type?: SchemaType
   onChange: (event: PatchEvent) => void
   onRemove: (item: number) => void
+  onInsert: (pos: 'before' | 'after', index: number, item: PrimitiveValue) => void
+  insertableTypes: SchemaType[]
   onEnterKey: (item: number) => void
   onEscapeKey: (item: number) => void
   onFocus: (path: Path) => void
@@ -53,6 +59,8 @@ export const ItemRow = React.forwardRef(function ItemRow(
     onFocus,
     onChange,
     onBlur,
+    insertableTypes,
+    onInsert,
     onRemove,
     focusPath,
     markers,
@@ -61,15 +69,27 @@ export const ItemRow = React.forwardRef(function ItemRow(
     presence,
   } = props
 
+  const conditionalReadOnly = useConditionalReadOnly() ?? readOnly
   const hasError = markers.filter(isValidationErrorMarker).length > 0
   const hasWarning = markers.filter(isValidationWarningMarker).length > 0
 
-  const showValidationStatus = !readOnly && markers.length > 0 && !type?.title
-  const showPresence = !type?.title && !readOnly && presence.length > 0
+  const showValidationStatus = !conditionalReadOnly && markers.length > 0 && !type?.title
+  const showPresence = !type?.title && !conditionalReadOnly && presence.length > 0
 
   const handleRemove = useCallback(() => {
     onRemove(index)
   }, [index, onRemove])
+
+  const handleInsert = useCallback(
+    (pos: 'before' | 'after', insertType: SchemaType) => {
+      onInsert?.(pos, index, getEmptyValue(insertType))
+    },
+    [index, onInsert]
+  )
+
+  const handleDuplicate = useCallback(() => {
+    onInsert?.('after', index, value)
+  }, [index, onInsert, value])
 
   const handleKeyPress = useCallback(
     (event: React.KeyboardEvent) => {
@@ -123,6 +143,8 @@ export const ItemRow = React.forwardRef(function ItemRow(
     return undefined
   }, [hasError, hasWarning])
 
+  const id = useId()
+
   return (
     <Card tone={tone} radius={2} paddingX={1} paddingY={2}>
       <Flex align={type ? 'flex-end' : 'center'} ref={ref}>
@@ -141,7 +163,7 @@ export const ItemRow = React.forwardRef(function ItemRow(
                 onFocus={onFocus}
                 onBlur={onBlur}
                 type={type}
-                readOnly={Boolean(readOnly || type.readOnly)}
+                readOnly={Boolean(conditionalReadOnly ?? type.readOnly)}
                 level={level}
                 presence={presence}
                 onKeyUp={handleKeyUp}
@@ -170,9 +192,26 @@ export const ItemRow = React.forwardRef(function ItemRow(
             </Box>
           )}
 
-          {!readOnly && onRemove && (
+          {!conditionalReadOnly && (
             <Box paddingY={1}>
-              <ConfirmDeleteButton placement="left" title="Remove item" onConfirm={handleRemove} />
+              <MenuButton
+                button={<Button padding={2} mode="bleed" icon={EllipsisVerticalIcon} />}
+                id={`${id}-menuButton`}
+                portal
+                popover={{portal: true, tone: 'default'}}
+                menu={
+                  <Menu>
+                    <MenuItem
+                      text="Remove"
+                      tone="critical"
+                      icon={TrashIcon}
+                      onClick={handleRemove}
+                    />
+                    <MenuItem text="Duplicate" icon={DuplicateIcon} onClick={handleDuplicate} />
+                    <InsertMenu types={insertableTypes} onInsert={handleInsert} />
+                  </Menu>
+                }
+              />
             </Box>
           )}
         </Flex>

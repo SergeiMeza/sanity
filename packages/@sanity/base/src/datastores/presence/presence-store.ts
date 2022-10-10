@@ -1,23 +1,11 @@
-import {
-  BehaviorSubject,
-  concat,
-  defer,
-  EMPTY,
-  from,
-  fromEvent,
-  merge,
-  NEVER,
-  Observable,
-  of,
-  timer,
-} from 'rxjs'
+import {BehaviorSubject, defer, EMPTY, from, fromEvent, merge, NEVER, Observable, timer} from 'rxjs'
 
 import {
   auditTime,
   distinctUntilChanged,
   filter,
-  flatMap,
   map,
+  mergeMap,
   mergeMapTo,
   scan,
   share,
@@ -25,17 +13,19 @@ import {
   switchMap,
   switchMapTo,
   takeUntil,
+  tap,
   toArray,
   withLatestFrom,
 } from 'rxjs/operators'
-import {flatten, groupBy, omit, uniq} from 'lodash'
+import {flatten, groupBy, isEqual, omit, uniq, uniqBy} from 'lodash'
 import {nanoid} from 'nanoid'
 
 import {User} from '@sanity/types'
 import userStore from '../user'
 
-import {bifur} from '../../client/bifur'
+import {getBifur} from '../../client/bifur'
 import {connectionStatus$} from '../connection-status/connection-status-store'
+import {debugParams$} from '../debugParams'
 import {
   DisconnectEvent,
   RollCallEvent,
@@ -77,7 +67,7 @@ function setSessionId(id) {
 
 export const SESSION_ID = getSessionId() || setSessionId(generate())
 
-const [presenceEvents$, sendMessage] = createBifurTransport(bifur, SESSION_ID)
+const [presenceEvents$, sendMessage] = createBifurTransport(getBifur, SESSION_ID)
 
 const currentLocation$ = new BehaviorSubject<PresenceLocation[]>([])
 const locationChange$ = currentLocation$.pipe(distinctUntilChanged())
@@ -122,15 +112,29 @@ const connectionChange$ = connectionStatus$.pipe(
   distinctUntilChanged()
 )
 
-const debugParams$ = concat(of(0), fromEvent(window, 'hashchange')).pipe(
-  map(() => document.location.hash.toLowerCase().substring(1).split(';'))
+export const debugPresenceParam$ = debugParams$.pipe(
+  map((args) => args.find((arg) => arg.startsWith('presence='))),
+  map(
+    (arg) =>
+      arg
+        ?.split('presence=')[1]
+        .split(',')
+        .map((r) => r.trim()) || []
+  )
 )
-const useMock$ = debugParams$.pipe(
-  filter((args) => args.includes('give_me_company')),
+
+const useMock$ = debugPresenceParam$.pipe(
+  filter((args) => args.includes('fake_others')),
+  tap(() => {
+    // eslint-disable-next-line no-console
+    console.log(
+      'Faking other users present in the studio. They will hang out in the document with _type: "presence" and _id: "presence-debug"'
+    )
+  }),
   switchMapTo(mock$)
 )
 
-const debugIntrospect$ = debugParams$.pipe(map((args) => args.includes('introspect')))
+const debugIntrospect$ = debugPresenceParam$.pipe(map((args) => args.includes('show_own')))
 
 const syncEvent$ = merge(myRollCall$, presenceEvents$).pipe(
   filter(
@@ -165,13 +169,14 @@ const allSessions$: Observable<UserSessionPair[]> = connectionChange$.pipe(
     const userIds = uniq(sessions.map((sess) => sess.userId))
     return from(userStore.getUsers(userIds)).pipe(
       map((users) =>
-        sessions.map(
-          (session): UserSessionPair => ({
+        sessions
+          .map((session) => ({
             // eslint-disable-next-line max-nested-callbacks
-            user: users.find((res) => res.id === session.userId) as User,
+            user: users.find((res) => res.id === session.userId),
             session: session,
-          })
-        )
+          }))
+          // If we failed to find a user profile for a session, remove it
+          .filter(userSessionPairHasUser)
       )
     )
   }),
@@ -180,6 +185,10 @@ const allSessions$: Observable<UserSessionPair[]> = connectionChange$.pipe(
   ),
   shareReplay({refCount: true, bufferSize: 1})
 )
+
+function userSessionPairHasUser(pair: Partial<UserSessionPair>): pair is UserSessionPair {
+  return Boolean(pair.user && pair.session)
+}
 
 export const globalPresence$: Observable<GlobalPresence[]> = allSessions$.pipe(
   map((sessions): {user: User; sessions: Session[]}[] => {
@@ -206,19 +215,23 @@ export const globalPresence$: Observable<GlobalPresence[]> = allSessions$.pipe(
     })
   ),
   map((userAndSessions) =>
-    userAndSessions.map((userAndSession) => ({
-      user: userAndSession.user,
-      status: 'online',
-      lastActiveAt: userAndSession.sessions.sort()[0]?.lastActiveAt,
-      locations: flatten((userAndSession.sessions || []).map((session) => session.locations || []))
-        .map((location) => ({
-          type: location.type,
-          documentId: location.documentId,
-          path: location.path,
-          lastActiveAt: location.lastActiveAt,
-        }))
-        .reduce((prev, curr) => prev.concat(curr), [] as PresenceLocation[]),
-    }))
+    userAndSessions
+      .map((userAndSession) => ({
+        user: userAndSession.user,
+        status: 'online' as const,
+        lastActiveAt: userAndSession.sessions.sort()[0]?.lastActiveAt,
+        locations: flatten(
+          (userAndSession.sessions || []).map((session) => session.locations || [])
+        )
+          .map((location) => ({
+            type: location.type,
+            documentId: location.documentId,
+            path: location.path,
+            lastActiveAt: location.lastActiveAt,
+          }))
+          .reduce((prev, curr) => prev.concat(curr), [] as PresenceLocation[]),
+      }))
+      .sort((a, b) => a.user.id.localeCompare(b.user.id))
   )
 )
 
@@ -230,7 +243,7 @@ export const documentPresence = (documentId: string): Observable<DocumentPresenc
         filter(
           (userAndSession) => debugIntrospect || userAndSession.session.sessionId !== SESSION_ID
         ),
-        flatMap((userAndSession) =>
+        mergeMap((userAndSession) =>
           (userAndSession.session.locations || [])
             .filter((item) => item.documentId === documentId)
             .map((location) => ({
@@ -242,5 +255,25 @@ export const documentPresence = (documentId: string): Observable<DocumentPresenc
         toArray()
       )
     )
+  )
+}
+
+export const documentPresenceUsers = (documentId: string): Observable<User[]> => {
+  return allSessions$.pipe(
+    withLatestFrom(debugIntrospect$),
+    map(([userAndSessions, debugIntrospect]) => {
+      const relevant = userAndSessions.filter(({session}) => {
+        const includeUser = debugIntrospect || session.sessionId !== SESSION_ID
+        const isInDocument = session.locations?.some(
+          (location) => location.documentId === documentId
+        )
+        return includeUser && isInDocument
+      })
+
+      return uniqBy(relevant, ({user}) => user.id)
+        .map(({user}) => user)
+        .sort((a, b) => (a.id > b.id ? 1 : -1))
+    }),
+    distinctUntilChanged(isEqual)
   )
 }

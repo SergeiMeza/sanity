@@ -4,6 +4,18 @@ declare module 'all:part:@sanity/base/absolutes' {
 }
 
 declare module 'all:part:@sanity/base/component'
+declare module 'all:part:@sanity/desk-tool/filter-fields-fn?' {
+  declare const filterFields: Observable[]
+  export default filterFields
+}
+
+declare module 'part:@sanity/desk-tool/filter-fields-fn?' {
+  import type {Observable} from 'rxjs'
+  declare const filterField: Observable<{
+    (type: ObjectSchemaTypeWithOptions, field: ObjectField): boolean
+  }>
+  export default filterField
+}
 
 declare module 'all:part:@sanity/base/diff-resolver' {
   type DiffComponent = React.ComponentType<unknown>
@@ -46,7 +58,35 @@ declare module 'part:@sanity/base/app-loading-screen' {
 declare module 'part:@sanity/base/arrow-drop-down'
 declare module 'part:@sanity/base/arrow-right'
 declare module 'part:@sanity/base/asset-url-builder'
-declare module 'part:@sanity/base/authentication-fetcher'
+declare module 'part:@sanity/base/authentication-fetcher' {
+  interface Role {
+    name: string
+    title: string
+    description: string
+  }
+  interface CurrentUser {
+    id: string
+    name: string
+    email: string
+    profileImage?: string
+    provider?: string
+    role: string | null
+    roles: Role[]
+  }
+
+  interface Provider {
+    name: string
+    title: string
+    url: string
+  }
+
+  const fetcher: {
+    getProviders: () => Promise<Provider[]>
+    getCurrentUser: () => Promise<CurrentUser | null>
+    logout: () => Promise<void>
+  }
+  export default fetcher
+}
 declare module 'part:@sanity/base/brand-logo' {
   declare const BrandLogo: React.ComponentType
   export default BrandLogo
@@ -248,14 +288,6 @@ declare module 'part:@sanity/base/schema?' {
 
 declare module 'part:@sanity/base/schema-creator'
 declare module 'part:@sanity/base/schema-type'
-declare module 'part:@sanity/base/search' {
-  import type {Observable} from 'rxjs'
-
-  declare const search: (queryStr: string) => Observable
-  export default search
-}
-
-declare module 'part:@sanity/base/search/weighted'
 
 declare module 'part:@sanity/base/settings' {
   export interface SettingsNamespace<ValueType> {

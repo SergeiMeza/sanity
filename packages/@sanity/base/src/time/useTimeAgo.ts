@@ -1,19 +1,19 @@
-import {useEffect, useState} from 'react'
+import {useEffect, useReducer} from 'react'
 import {
-  format,
-  differenceInSeconds,
-  differenceInMinutes,
-  differenceInHours,
   differenceInDays,
-  differenceInWeeks,
+  differenceInHours,
+  differenceInMinutes,
   differenceInMonths,
+  differenceInSeconds,
+  differenceInWeeks,
   differenceInYears,
+  format,
 } from 'date-fns'
 import pluralize from 'pluralize'
 
 interface TimeSpec {
   timestamp: string
-  refreshInterval: number
+  refreshInterval: number | null
 }
 
 const FIVE_SECONDS = 1000 * 5
@@ -27,30 +27,50 @@ interface TimeAgoOpts {
 }
 
 export function useTimeAgo(time: Date | string, {minimal, agoSuffix}: TimeAgoOpts = {}): string {
-  const [resolved, setResolved] = useState(() => formatRelativeTime(time, {minimal, agoSuffix}))
+  const resolved = formatRelativeTime(time, {minimal, agoSuffix})
+
+  const [, forceUpdate] = useReducer((x) => x + 1, 0)
 
   useEffect(() => {
-    setResolved(formatRelativeTime(time, {minimal, agoSuffix}))
-  }, [time, minimal, agoSuffix])
+    let timerId: number | null
 
-  useEffect(() => {
-    const id: number | undefined = Number.isFinite(resolved.refreshInterval)
-      ? window.setInterval(
-          () => setResolved(formatRelativeTime(time, {minimal, agoSuffix})),
-          resolved.refreshInterval
-        )
-      : undefined
+    function tick() {
+      timerId = window.setTimeout(() => {
+        forceUpdate()
+        // avoid pile-up of setInterval callbacks,
+        // e.g. schedule the next update at `refreshInterval` *after* the previous one finishes
+        timerId = window.setTimeout(tick, resolved.refreshInterval)
+      }, resolved.refreshInterval)
+    }
 
-    return () => clearInterval(id)
-  }, [time, minimal, resolved.refreshInterval, agoSuffix])
+    if (resolved.refreshInterval !== null) {
+      tick()
+    }
+
+    return () => {
+      if (timerId !== null) {
+        clearTimeout(timerId)
+      }
+    }
+  }, [forceUpdate, resolved.refreshInterval])
 
   return resolved.timestamp
 }
 
 function formatRelativeTime(date: Date | string, opts: TimeAgoOpts = {}): TimeSpec {
-  const now = Date.now()
   const parsedDate = date instanceof Date ? date : new Date(date)
 
+  // Invalid date? Return empty timestamp and `null` as refresh interval, to save us from
+  // continuously trying to format an invalid date. The `useEffect` calls in the hook will
+  // trigger a re-evaluation of the timestamp when the date changes, so this is safe.
+  if (!parsedDate.getTime()) {
+    return {
+      timestamp: '',
+      refreshInterval: null,
+    }
+  }
+
+  const now = Date.now()
   const diffMonths = differenceInMonths(now, parsedDate)
   const diffYears = differenceInYears(now, parsedDate)
 
@@ -59,20 +79,20 @@ function formatRelativeTime(date: Date | string, opts: TimeAgoOpts = {}): TimeSp
       // same year
       return {
         timestamp: format(parsedDate, 'MMM d'),
-        refreshInterval: +Infinity,
+        refreshInterval: null,
       }
     }
 
     if (opts.minimal) {
       return {
         timestamp: format(parsedDate, 'MMM d, yyyy'),
-        refreshInterval: +Infinity,
+        refreshInterval: null,
       }
     }
 
     return {
       timestamp: format(parsedDate, 'MMM d, yyyy, hh:mm a'),
-      refreshInterval: +Infinity,
+      refreshInterval: null,
     }
   }
 

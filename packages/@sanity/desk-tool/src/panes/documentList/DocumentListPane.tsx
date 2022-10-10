@@ -1,11 +1,16 @@
 import React, {memo, useMemo} from 'react'
+import schema from 'part:@sanity/base/schema'
 import {Pane} from '../../components/pane'
 import {useShallowUnique} from '../../utils/useShallowUnique'
 import {useUnique} from '../../utils/useUnique'
 import {useDeskToolSetting} from '../../settings'
 import {BaseDeskToolPaneProps} from '../types'
-import {DEFAULT_ORDERING, EMPTY_RECORD} from './constants'
-import {getTypeNameFromSingleTypeFilter, isSimpleTypeFilter} from './helpers'
+import {EMPTY_RECORD} from './constants'
+import {
+  applyOrderingFunctions,
+  getTypeNameFromSingleTypeFilter,
+  isSimpleTypeFilter,
+} from './helpers'
 import {DocumentListPaneContent} from './DocumentListPaneContent'
 import {DocumentListPaneHeader} from './DocumentListPaneHeader'
 import {Layout, SortOrder} from './types'
@@ -30,24 +35,36 @@ export const DocumentListPane = memo(function DocumentListPane(props: DocumentLi
     title,
   } = pane
 
-  const {defaultOrdering = emptyArray, filter} = options
+  const {defaultOrdering = emptyArray, filter, apiVersion} = options
   const params = useShallowUnique(options.params || EMPTY_RECORD)
   const typeName = useMemo(() => getTypeNameFromSingleTypeFilter(filter, params), [filter, params])
   const showIcons = displayOptions?.showIcons !== false
   const [layout, setLayout] = useDeskToolSetting<Layout>(typeName, 'layout', defaultLayout)
+  const defaultOrderingBy = useMemo(
+    () => ({
+      by: defaultOrdering,
+    }),
+    [defaultOrdering]
+  )
   const [sortOrderRaw, setSortOrder] = useDeskToolSetting<SortOrder>(
     typeName,
     'sortOrder',
-    DEFAULT_ORDERING
+    defaultOrderingBy
   )
-  const sortOrder = useUnique(sortOrderRaw)
+
+  const sortWithOrderingFn =
+    typeName && sortOrderRaw
+      ? applyOrderingFunctions(sortOrderRaw, schema.get(typeName))
+      : sortOrderRaw
+
+  const sortOrder = useUnique(sortWithOrderingFn)
   const filterIsSimpleTypeContraint = isSimpleTypeFilter(filter)
 
   const {error, fullList, handleListChange, isLoading, items, onRetry} = useDocumentList({
-    defaultOrdering,
     filter,
     params,
     sortOrder,
+    apiVersion,
   })
 
   return (

@@ -131,6 +131,12 @@ export interface CustomComponentPaneNode<
   Props extends CustomComponentPaneNodeProps = CustomComponentPaneNodeProps
 > extends BaseResolvedPaneNode<'component'> {
   component: React.ComponentType<Props> | React.ReactNode
+  /**
+   * An experimental flag that can be used to opt out of the forced refresh when
+   * the `itemId` or `childItemId` changes. See `UserComponentPane`:
+   * https://github.com/sanity-io/sanity/commit/8340a003043edf6de3afd9ff628ce93be79978e2
+   */
+  __preserveInstance?: boolean
 }
 
 export interface CustomComponentPaneNodeProps {
@@ -187,6 +193,7 @@ export interface DocumentListPaneNode extends BaseResolvedPaneNode<'documentList
     filter: string
     defaultOrdering?: Array<{field: string; direction: 'asc' | 'desc'}>
     params?: Record<string, unknown>
+    apiVersion?: string
   }
   schemaTypeName: string
 }

@@ -1,18 +1,21 @@
 import {PortableTextBlock, RenderAttributes} from '@sanity/portable-text-editor'
 import {isKeySegment, isValidationMarker, Marker} from '@sanity/types'
 import {Box, ResponsivePaddingProps, Tooltip} from '@sanity/ui'
-import React, {useMemo} from 'react'
+import React, {useCallback, useMemo, useState} from 'react'
+import {isEqual} from 'lodash'
 import {Markers} from '../../../legacyParts'
 import PatchEvent from '../../../PatchEvent'
 import {BlockActions} from '../BlockActions'
 import {RenderBlockActions, RenderCustomMarkers} from '../types'
+import {createDebugStyle} from '../utils/debugRender'
+import {ReviewChangesHighlightBlock, StyledChangeIndicatorForFieldPath} from '../_common'
 import {TEXT_STYLE_PADDING} from './constants'
 import {
   BlockActionsInner,
   BlockActionsOuter,
+  BlockExtrasContainer,
   ChangeIndicatorWrapper,
   ListPrefixWrapper,
-  StyledChangeIndicatorWithProvidedFullPath,
   TextBlockFlexWrapper,
   TextFlex,
   TextRoot,
@@ -26,6 +29,7 @@ interface TextBlockProps {
   blockRef?: React.RefObject<HTMLDivElement>
   children: React.ReactNode
   isFullscreen?: boolean
+  compareValue: PortableTextBlock | undefined
   markers: Marker[]
   onChange: (event: PatchEvent) => void
   readOnly: boolean
@@ -38,6 +42,7 @@ export function TextBlock(props: TextBlockProps): React.ReactElement {
   const {
     attributes,
     block,
+    compareValue,
     blockRef,
     children,
     isFullscreen,
@@ -49,9 +54,14 @@ export function TextBlock(props: TextBlockProps): React.ReactElement {
     spellCheck,
   } = props
 
+  const [reviewChangesHovered, setReviewChangesHovered] = useState<boolean>(false)
+
   const {focused} = attributes
 
   const blockKey = block._key
+
+  const handleMouseOver = useCallback(() => setReviewChangesHovered(true), [])
+  const handleMouseOut = useCallback(() => setReviewChangesHovered(false), [])
 
   // These are marker that is only for the block level (things further up, like annotations and inline objects are dealt with in their respective components)
   const blockMarkers = useMemo(
@@ -94,7 +104,9 @@ export function TextBlock(props: TextBlockProps): React.ReactElement {
             <TextStyle data-list-prefix="" />
           </ListPrefixWrapper>
         )}
-        <TextStyle data-text="">{children}</TextStyle>
+        <TextStyle data-text="" style={createDebugStyle()}>
+          {children}
+        </TextStyle>
       </TextFlex>
     )
   }, [block.style, block.listItem, block.level, children])
@@ -126,6 +138,26 @@ export function TextBlock(props: TextBlockProps): React.ReactElement {
     return TEXT_STYLE_PADDING[block.style] || {paddingY: 2}
   }, [block])
 
+  const changeIndicator = useMemo(() => {
+    if (!isFullscreen) {
+      return null
+    }
+    const hasChanges = !isEqual(compareValue, block)
+    return (
+      <ChangeIndicatorWrapper
+        onMouseOver={handleMouseOver}
+        onMouseOut={handleMouseOut}
+        $hasChanges={hasChanges}
+      >
+        <StyledChangeIndicatorForFieldPath
+          path={blockPath}
+          hasFocus={focused}
+          isChanged={hasChanges}
+        />
+      </ChangeIndicatorWrapper>
+    )
+  }, [block, blockPath, compareValue, focused, handleMouseOut, handleMouseOver, isFullscreen])
+
   return (
     <Box data-testid="text-block" {...outerPaddingProps}>
       <TextBlockFlexWrapper data-testid="text-block__wrapper">
@@ -147,6 +179,7 @@ export function TextBlock(props: TextBlockProps): React.ReactElement {
               $level={block.level}
               data-error={hasErrors ? '' : undefined}
               data-warning={hasWarnings ? '' : undefined}
+              data-read-only={readOnly}
               data-list-item={block.listItem}
               data-custom-markers={hasCustomMarkers ? '' : undefined}
               data-testid="text-block__text"
@@ -157,37 +190,25 @@ export function TextBlock(props: TextBlockProps): React.ReactElement {
             </TextRoot>
           </Tooltip>
         </Box>
+        <div contentEditable={false}>
+          <BlockExtrasContainer>
+            {renderBlockActions && (
+              <BlockActionsOuter marginRight={1}>
+                <BlockActionsInner>
+                  {focused && !readOnly && (
+                    <BlockActions
+                      onChange={onChange}
+                      block={block}
+                      renderBlockActions={renderBlockActions}
+                    />
+                  )}
+                </BlockActionsInner>
+              </BlockActionsOuter>
+            )}
 
-        <div
-          contentEditable={false}
-          // NOTE: it’s important that this element does not have the `user-select: none` CSS
-          // property, because that will not work in Safari (breaks `Cmd+A`).
-          // It seems Safari does not allow defining `user-select` on an element which also has
-          // the `contenteditable="false"` attribute.
-        >
-          {renderBlockActions && (
-            <BlockActionsOuter marginRight={1}>
-              <BlockActionsInner>
-                {focused && !readOnly && (
-                  <BlockActions
-                    onChange={onChange}
-                    block={block}
-                    renderBlockActions={renderBlockActions}
-                  />
-                )}
-              </BlockActionsInner>
-            </BlockActionsOuter>
-          )}
-          {isFullscreen && (
-            <ChangeIndicatorWrapper>
-              <StyledChangeIndicatorWithProvidedFullPath
-                compareDeep
-                value={block}
-                hasFocus={focused}
-                path={blockPath}
-              />
-            </ChangeIndicatorWrapper>
-          )}
+            {changeIndicator}
+          </BlockExtrasContainer>
+          {reviewChangesHovered && <ReviewChangesHighlightBlock />}
         </div>
       </TextBlockFlexWrapper>
     </Box>

@@ -1,21 +1,27 @@
 import {ArraySchemaType, isReferenceSchemaType} from '@sanity/types'
 import {AddIcon} from '@sanity/icons'
 import React, {ReactNode, useMemo} from 'react'
-import {Button, Grid, Menu, MenuButton, MenuItem} from '@sanity/ui'
+import {Box, Button, Grid, Menu, MenuButton, MenuItem, Tooltip, Text} from '@sanity/ui'
 import {useId} from '@reach/auto-id'
+import {useConditionalReadOnly} from '@sanity/base/_internal'
 import PatchEvent from '../../../PatchEvent'
 
 // These are the props any implementation of the ArrayFunctions part will receive
 export interface ArrayFunctionsProps<SchemaType extends ArraySchemaType, MemberType> {
+  /* eslint-disable react/no-unused-prop-types */
   className?: string
   type: SchemaType
   children?: ReactNode
+  /* eslint-disable react/no-unused-prop-types */
   value?: MemberType[]
   readOnly: boolean | null
   onAppendItem: (itemValue: MemberType) => void
+  /* eslint-disable react/no-unused-prop-types */
   onPrependItem: (itemValue: MemberType) => void
+  /* eslint-disable react/no-unused-prop-types */
   onFocusItem: (item: MemberType, index: number) => void
   onCreateValue: (type: SchemaType) => MemberType
+  /* eslint-disable react/no-unused-prop-types */
   onChange: (event: PatchEvent) => void
 }
 
@@ -24,6 +30,7 @@ export default function ArrayFunctions<MemberType>(
 ) {
   const {type, readOnly, children, onCreateValue, onAppendItem} = props
   const menuButtonId = useId()
+  const conditionalReadOnly = useConditionalReadOnly() ?? readOnly
 
   const insertItem = React.useCallback(
     (itemType) => {
@@ -40,8 +47,26 @@ export default function ArrayFunctions<MemberType>(
 
   const popoverProps = useMemo(() => ({constrainSize: true, portal: true}), [])
 
-  if (readOnly) {
-    return null
+  if (conditionalReadOnly) {
+    return (
+      <Tooltip
+        portal
+        content={
+          <Box padding={2} sizing="border">
+            <Text size={1}>This field is read-only</Text>
+          </Box>
+        }
+      >
+        <Grid>
+          <Button
+            icon={AddIcon}
+            mode="ghost"
+            disabled
+            text={type.of.length === 1 ? 'Add item' : 'Add item...'}
+          />
+        </Grid>
+      </Tooltip>
+    )
   }
 
   return (

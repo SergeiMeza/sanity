@@ -12,8 +12,9 @@ import {FormFieldPresence} from '@sanity/base/presence'
 import React, {memo, useCallback, useMemo, useRef} from 'react'
 import {FOCUS_TERMINATOR, pathFor, startsWith} from '@sanity/util/paths'
 import {Box} from '@sanity/ui'
+import {useConditionalReadOnly} from '@sanity/base/_internal'
 import PatchEvent from '../../../../PatchEvent'
-import {ArrayMember, ReferenceItemComponentType} from '../types'
+import {ArrayMember, InsertEvent, ReferenceItemComponentType} from '../types'
 import {EMPTY_ARRAY} from '../../../../utils/empty'
 import {hasFocusAtPath, hasFocusWithinPath} from '../../../../utils/focusUtils'
 import {useScrollIntoViewOnFocusWithin} from '../../../../hooks/useScrollIntoViewOnFocusWithin'
@@ -33,6 +34,7 @@ interface ArrayInputListItemProps {
   itemKey: string | undefined
   layout?: 'media' | 'default'
   onRemove: (value: ArrayMember) => void
+  onInsert: (event: InsertEvent) => void
   onChange: (event: PatchEvent, value: ArrayMember) => void
   onFocus: (path: Path) => void
   onBlur: () => void
@@ -56,6 +58,7 @@ export const ArrayItem = memo(function ArrayItem(props: ArrayInputListItemProps)
     onFocus,
     onChange,
     onRemove,
+    onInsert,
     onBlur,
     filterField,
     compareValue,
@@ -63,7 +66,7 @@ export const ArrayItem = memo(function ArrayItem(props: ArrayInputListItemProps)
   } = props
 
   const innerElementRef = useRef(null)
-
+  const conditionalReadOnly = useConditionalReadOnly() ?? readOnly
   const hasFocusWithin = hasFocusWithinPath(props.focusPath, props.value)
   useScrollIntoViewOnFocusWithin(innerElementRef, hasFocusWithin)
 
@@ -92,12 +95,14 @@ export const ArrayItem = memo(function ArrayItem(props: ArrayInputListItemProps)
     },
     [emitFocus]
   )
+
   const handleEditOpen = useCallback(() => emitFocus([FOCUS_TERMINATOR]), [emitFocus])
   const handleEditClose = useCallback(() => {
     if (isEmpty(value)) {
       onRemove(value)
+    } else {
+      emitFocus([])
     }
-    emitFocus([])
   }, [value, onRemove, emitFocus])
 
   const handleChange = useCallback(
@@ -119,7 +124,7 @@ export const ArrayItem = memo(function ArrayItem(props: ArrayInputListItemProps)
   )
 
   const options = type.options || {}
-  const isSortable = !readOnly && options.sortable !== false
+  const isSortable = !conditionalReadOnly && options.sortable !== false
 
   const isEditing = hasFocusWithinPath(focusPath, value)
 
@@ -167,11 +172,13 @@ export const ArrayItem = memo(function ArrayItem(props: ArrayInputListItemProps)
         focusPath={focusPath}
         onFocus={onFocus}
         onBlur={onBlur}
+        onInsert={onInsert}
+        insertableTypes={type.of}
         type={itemType}
         value={value}
         isSortable={isSortable}
         ReferenceItemComponent={ReferenceItemComponent}
-        readOnly={readOnly}
+        readOnly={conditionalReadOnly}
         presence={itemPresence}
         compareValue={compareValue}
       />
@@ -181,7 +188,9 @@ export const ArrayItem = memo(function ArrayItem(props: ArrayInputListItemProps)
       form
     ) : (
       <EditPortal
-        header={readOnly ? `View ${itemType?.title || ''}` : `Edit ${itemType?.title || ''}`}
+        header={
+          conditionalReadOnly ? `View ${itemType?.title || ''}` : `Edit ${itemType?.title || ''}`
+        }
         type={type?.options?.editModal === 'fold' ? 'dialog' : type?.options?.editModal || 'dialog'}
         id={value._key}
         onClose={handleEditClose}
@@ -206,7 +215,8 @@ export const ArrayItem = memo(function ArrayItem(props: ArrayInputListItemProps)
     itemType,
     onBlur,
     onFocus,
-    readOnly,
+    onInsert,
+    conditionalReadOnly,
     type?.options?.editModal,
     value,
   ])
@@ -218,9 +228,11 @@ export const ArrayItem = memo(function ArrayItem(props: ArrayInputListItemProps)
       value={value}
       readOnly={readOnly}
       type={itemType}
+      insertableTypes={type.of}
       presence={isEditing ? EMPTY_ARRAY : itemPresence}
       validation={scopedValidation}
       isSortable={isSortable}
+      onInsert={onInsert}
       onFocus={handleItemElementFocus}
       onClick={itemType ? handleEditOpen : undefined}
       onRemove={handleRemove}

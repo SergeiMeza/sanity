@@ -1,5 +1,6 @@
+import chalk from 'chalk'
 import client from '@sanity/client'
-import generateHelpUrl from '@sanity/generate-help-url'
+import {generateHelpUrl} from '@sanity/generate-help-url'
 import getUserConfig from './getUserConfig'
 
 const apiHosts = {
@@ -21,11 +22,20 @@ const authErrors = () => ({
   onError: (err) => {
     const statusCode = err.response && err.response.body && err.response.body.statusCode
     if (statusCode === 401) {
-      err.message = `${err.message}. For more information, see ${generateHelpUrl('cli-errors')}.`
+      err.message = `${err.message}. You may need to login again with ${chalk.cyan(
+        'sanity login'
+      )}.\nFor more information, see ${generateHelpUrl('cli-errors')}.`
     }
     return err
   },
 })
+
+export function getCliToken() {
+  // eslint-disable-next-line no-process-env
+  const envAuthToken = process.env.SANITY_AUTH_TOKEN
+  const userConfig = getUserConfig()
+  return envAuthToken || userConfig.get('authToken')
+}
 
 export default function clientWrapper(manifest, configPath) {
   const requester = client.requester.clone()
@@ -35,13 +45,11 @@ export default function clientWrapper(manifest, configPath) {
     // Read these environment variables "late" to allow `.env` files
 
     /* eslint-disable no-process-env */
-    const envAuthToken = process.env.SANITY_AUTH_TOKEN
     const sanityEnv = process.env.SANITY_INTERNAL_ENV || 'production'
     /* eslint-enable no-process-env */
 
     const {requireUser, requireProject, api} = {...defaults, ...opts}
-    const userConfig = getUserConfig()
-    const token = envAuthToken || userConfig.get('authToken')
+    const token = getCliToken()
     const apiHost = apiHosts[sanityEnv]
     const apiConfig = {
       ...((manifest && manifest.api) || {}),
@@ -67,7 +75,7 @@ export default function clientWrapper(manifest, configPath) {
       ...apiConfig,
       apiVersion: '1',
       dataset: apiConfig.dataset || '~dummy-placeholder-dataset-',
-      token: token,
+      token: requireUser ? token : undefined,
       useProjectHostname: requireProject,
       requester: requester,
       useCdn: false,

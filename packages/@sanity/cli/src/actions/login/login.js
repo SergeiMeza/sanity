@@ -7,20 +7,21 @@ import EventSource from 'eventsource'
 import {parseJson} from '@sanity/util/lib/safeJson'
 import getUserConfig from '../../util/getUserConfig'
 import canLaunchBrowser from '../../util/canLaunchBrowser'
+import {getCliToken} from '../../util/clientWrapper'
 
 export default async function login(args, context) {
   const {prompt, output, apiClient} = context
-  const {sso, experimental} = args.extOptions
+  const {sso, experimental, open: openFlag, provider: specifiedProvider} = args.extOptions
+  const previousToken = getCliToken()
+  const hasExistingToken = Boolean(previousToken)
 
-  // _Potentially_ already authed client
-  const authedClient = apiClient({requireUser: false, requireProject: false})
-  const hasExistingToken = Boolean(authedClient.config().token)
-
-  // Explicitly tell _this_ client not to use a token
-  const client = authedClient.clone().config({token: undefined})
+  // Explicitly tell this client not to use a token
+  const client = apiClient({requireUser: false, requireProject: false})
+    .clone()
+    .config({token: undefined})
 
   // Get the desired authentication provider
-  const provider = await getProvider({client, sso, experimental, output, prompt})
+  const provider = await getProvider({client, sso, experimental, output, prompt, specifiedProvider})
   if (provider === undefined) {
     output.print(chalk.red('No authentication providers found'))
     return
@@ -37,14 +38,17 @@ export default async function login(args, context) {
   providerUrl.query.label = `${os.hostname()} / ${os.platform()}`
   const loginUrl = urlParser.format(providerUrl)
 
-  const shouldLaunchBrowser = canLaunchBrowser()
+  const shouldLaunchBrowser = canLaunchBrowser() && openFlag !== false
   const actionText = shouldLaunchBrowser ? 'Opening browser at' : 'Please open a browser at'
 
   output.print(`\n${actionText} ${loginUrl}\n`)
   const spin = output
     .spinner('Waiting for browser login to complete... Press Ctrl + C to cancel')
     .start()
-  open(loginUrl, {wait: false})
+
+  if (shouldLaunchBrowser) {
+    open(loginUrl, {wait: false})
+  }
 
   // Wait for a success/error on the listener channel
   let token
@@ -68,12 +72,16 @@ export default async function login(args, context) {
 
   // If we had a session previously, attempt to clear it
   if (hasExistingToken) {
-    await authedClient.request({uri: '/auth/logout', method: 'POST'}).catch((err) => {
-      const statusCode = err && err.response && err.response.statusCode
-      if (statusCode !== 401) {
-        output.warn('[warn] Failed to log out existing session')
-      }
-    })
+    await apiClient({requireUser: true, requireProject: false})
+      .clone()
+      .config({token: previousToken})
+      .request({uri: '/auth/logout', method: 'POST'})
+      .catch((err) => {
+        const statusCode = err && err.response && err.response.statusCode
+        if (statusCode !== 401) {
+          output.warn('[warn] Failed to log out existing session')
+        }
+      })
   }
 
   output.print(chalk.green('Login successful'))
@@ -140,7 +148,7 @@ function decryptToken(token, secret, iv) {
   return `${dec}${decipher.final('utf8')}`
 }
 
-async function getProvider({output, client, sso, experimental, prompt}) {
+async function getProvider({output, client, sso, experimental, prompt, specifiedProvider}) {
   if (sso) {
     return getSSOProvider({client, prompt, slug: sso})
   }
@@ -152,6 +160,18 @@ async function getProvider({output, client, sso, experimental, prompt}) {
     providers = [...providers, {name: 'sso', title: 'SSO'}]
   }
   spin.stop()
+
+  const providerNames = providers.map((prov) => prov.name)
+
+  if (specifiedProvider && providerNames.includes(specifiedProvider)) {
+    const provider = providers.find((prov) => prov.name === specifiedProvider)
+
+    if (!provider) {
+      throw new Error(`Cannot find login provider with name "${specifiedProvider}"`)
+    }
+
+    return provider
+  }
 
   const provider = await promptProviders(prompt, providers)
   if (provider.name === 'sso') {

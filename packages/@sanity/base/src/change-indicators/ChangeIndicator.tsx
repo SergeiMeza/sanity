@@ -1,10 +1,10 @@
 import {useLayer} from '@sanity/ui'
-import React, {memo, useContext, useMemo} from 'react'
+import React, {memo, useCallback, useContext, useEffect, useMemo} from 'react'
 import deepCompare from 'react-fast-compare'
 import * as PathUtils from '@sanity/util/paths'
 import {Path} from '@sanity/types'
 import {useReporter} from './tracker'
-import {ChangeIndicatorContext} from './ChangeIndicatorContext'
+import {ChangeIndicatorContext, ChangeIndicatorValueContext} from './ChangeIndicatorContext'
 import {ElementWithChangeBar} from './ElementWithChangeBar'
 
 const EMPTY_PATH: Path = []
@@ -30,13 +30,14 @@ const canCompareShallow = (valueA: unknown, valueB: unknown): boolean => {
 
 const ChangeBarWrapper = memo(function ChangeBarWrapper(
   props: React.ComponentProps<'div'> & {
-    isChanged: boolean
-    hasFocus: boolean
-    fullPath: Path
     disabled?: boolean
+    fullPath: Path
+    hasFocus: boolean
+    isChanged: boolean
+    withHoverEffect?: boolean
   }
 ) {
-  const {children, className, fullPath, hasFocus, isChanged, disabled} = props
+  const {children, className, disabled, fullPath, hasFocus, isChanged, withHoverEffect} = props
   const layer = useLayer()
   const [hasHover, setHover] = React.useState(false)
   const onMouseEnter = React.useCallback(() => setHover(true), [])
@@ -59,7 +60,12 @@ const ChangeBarWrapper = memo(function ChangeBarWrapper(
 
   return (
     <div ref={ref} className={className} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
-      <ElementWithChangeBar hasFocus={hasFocus} isChanged={isChanged} disabled={disabled}>
+      <ElementWithChangeBar
+        hasFocus={hasFocus}
+        isChanged={isChanged}
+        disabled={disabled}
+        withHoverEffect={withHoverEffect}
+      >
         {children}
       </ElementWithChangeBar>
     </div>
@@ -69,31 +75,28 @@ const ChangeBarWrapper = memo(function ChangeBarWrapper(
 export function ChangeIndicatorScope(props: {path: Path; children?: React.ReactNode}) {
   const {children, path} = props
   const parentContext = React.useContext(ChangeIndicatorContext)
+  const parentValueContext = React.useContext(ChangeIndicatorValueContext)
   const focusPath = parentContext.focusPath
-  const value = PathUtils.get(parentContext.value, path)
+  const value = PathUtils.get(parentValueContext, path)
   const compareValue = PathUtils.get(parentContext.compareValue, path)
 
-  const node = useMemo(() => {
-    return (
-      <ChangeIndicatorProvider
-        path={path}
-        focusPath={focusPath}
-        value={value}
-        compareValue={compareValue}
-      >
-        {children}
-      </ChangeIndicatorProvider>
-    )
-  }, [children, compareValue, focusPath, path, value])
-
-  return node
+  return (
+    <ChangeIndicatorProvider
+      path={path}
+      focusPath={focusPath}
+      value={value}
+      compareValue={compareValue}
+    >
+      {children}
+    </ChangeIndicatorProvider>
+  )
 }
 
 export function ChangeIndicatorProvider(props: {
   path: Path
   focusPath: Path
-  value: unknown
   compareValue: unknown
+  value: unknown
   children: React.ReactNode
 }) {
   const {compareValue, value} = props
@@ -108,55 +111,79 @@ export function ChangeIndicatorProvider(props: {
 
   const contextValue = React.useMemo(() => {
     return {
-      value,
       compareValue,
       focusPath,
       path,
       fullPath,
     }
-  }, [fullPath, value, compareValue, focusPath, path])
+  }, [fullPath, compareValue, focusPath, path])
 
   return (
     <ChangeIndicatorContext.Provider value={contextValue}>
-      {props.children}
+      <ChangeIndicatorValueContext.Provider value={value}>
+        {props.children}
+      </ChangeIndicatorValueContext.Provider>
     </ChangeIndicatorContext.Provider>
   )
 }
 
+export function ChangeIndicatorValueProvider(props: {value: unknown; children: React.ReactNode}) {
+  return (
+    <ChangeIndicatorValueContext.Provider value={props.value}>
+      {props.children}
+    </ChangeIndicatorValueContext.Provider>
+  )
+}
+
 interface CoreProps {
+  children?: React.ReactNode
   className?: string
+  compareDeep?: boolean
+  compareValue: unknown
   disabled?: boolean
   fullPath: Path
-  compareDeep?: boolean
-  value: unknown
   hasFocus: boolean
-  compareValue: unknown
-  children?: React.ReactNode
+  /**
+   * Callback function that returns a boolean if there are changes
+   */
+  onHasChanges?: (changed: boolean) => void
+  value: unknown
+  withHoverEffect?: boolean
 }
 
 export function CoreChangeIndicator(props: CoreProps) {
   const {
+    children,
     className,
+    compareDeep,
+    compareValue,
     disabled,
     fullPath,
-    value,
-    compareValue,
     hasFocus,
-    compareDeep,
-    children,
+    onHasChanges,
+    value,
+    withHoverEffect,
   } = props
+
   // todo: lazy compare debounced (possibly with intersection observer)
   const isChanged =
     (canCompareShallow(value, compareValue) && value !== compareValue) ||
     (compareDeep && !deepCompare(value, compareValue))
 
+  useEffect(() => {
+    if (onHasChanges) {
+      onHasChanges(isChanged)
+    }
+  }, [isChanged, onHasChanges])
+
   return (
     <ChangeBarWrapper
       className={className}
-      isChanged={isChanged}
+      disabled={disabled}
       fullPath={fullPath}
       hasFocus={hasFocus}
-      disabled={disabled}
+      isChanged={isChanged}
+      withHoverEffect={withHoverEffect}
     >
       {children}
     </ChangeBarWrapper>
@@ -166,7 +193,7 @@ export function CoreChangeIndicator(props: CoreProps) {
 export function ChangeIndicatorForFieldPath(props: {
   path: Path
   isChanged: boolean
-  children: React.ReactNode
+  children?: React.ReactNode
   className?: string
   disabled?: boolean
   hasFocus?: boolean
@@ -178,34 +205,51 @@ export function ChangeIndicatorForFieldPath(props: {
     parentContext.fullPath,
     path,
   ])
-
-  return (
-    <ChangeBarWrapper
-      disabled={disabled}
-      className={className}
-      isChanged={isChanged}
-      hasFocus={Boolean(hasFocus)}
-      fullPath={fullPath}
-    >
-      {children}
-    </ChangeBarWrapper>
+  return useMemo(
+    () => (
+      <ChangeBarWrapper
+        disabled={disabled}
+        className={className}
+        isChanged={isChanged}
+        hasFocus={Boolean(hasFocus)}
+        fullPath={fullPath}
+      >
+        {children}
+      </ChangeBarWrapper>
+    ),
+    [children, className, disabled, fullPath, hasFocus, isChanged]
   )
 }
 
 interface ChangeIndicatorWithProvidedFullPathProps {
+  children?: React.ReactNode
   className?: string
+  compareDeep?: boolean
   disabled?: boolean
+  hasFocus: boolean
+  /**
+   * Callback function that returns a boolean if there are changes
+   */
+  onHasChanges?: (changed: boolean) => void
   path: Path
   value: unknown
-  hasFocus: boolean
-  compareDeep?: boolean
-  children?: React.ReactNode
+  withHoverEffect?: boolean
 }
 
 export function ChangeIndicatorWithProvidedFullPath(
   props: ChangeIndicatorWithProvidedFullPathProps
 ) {
-  const {className, disabled, path, value, hasFocus, compareDeep, children} = props
+  const {
+    children,
+    className,
+    compareDeep,
+    disabled,
+    hasFocus,
+    onHasChanges,
+    path,
+    value,
+    withHoverEffect,
+  } = props
   const parentContext = React.useContext(ChangeIndicatorContext)
 
   const fullPath = React.useMemo(() => PathUtils.pathFor(parentContext.fullPath.concat(path)), [
@@ -213,15 +257,26 @@ export function ChangeIndicatorWithProvidedFullPath(
     path,
   ])
 
+  const handleOnHasChanges = useCallback(
+    (changed) => {
+      if (onHasChanges) {
+        onHasChanges(changed)
+      }
+    },
+    [onHasChanges]
+  )
+
   return (
     <CoreChangeIndicator
-      disabled={disabled}
       className={className}
-      value={value}
-      compareValue={PathUtils.get(parentContext.compareValue, path)}
-      hasFocus={hasFocus}
-      fullPath={fullPath}
       compareDeep={compareDeep}
+      compareValue={PathUtils.get(parentContext.compareValue, path)}
+      disabled={disabled}
+      fullPath={fullPath}
+      hasFocus={hasFocus}
+      onHasChanges={handleOnHasChanges}
+      value={value}
+      withHoverEffect={withHoverEffect}
     >
       {children}
     </CoreChangeIndicator>
@@ -255,7 +310,9 @@ export function ChangeIndicatorCompareValueProvider(props: {
 
   return (
     <ChangeIndicatorContext.Provider value={contextValue}>
-      {children}
+      <ChangeIndicatorValueContext.Provider value={value}>
+        {children}
+      </ChangeIndicatorValueContext.Provider>
     </ChangeIndicatorContext.Provider>
   )
 }
@@ -265,7 +322,8 @@ export function ContextProvidedChangeIndicator(
 ): React.ReactElement {
   const {children, className, compareDeep, disabled} = props
   const context = React.useContext(ChangeIndicatorContext)
-  const {value, compareValue, path, focusPath, fullPath} = context
+  const value = React.useContext(ChangeIndicatorValueContext)
+  const {compareValue, path, focusPath, fullPath} = context
 
   return (
     <CoreChangeIndicator

@@ -1,28 +1,18 @@
 // Note: INCOMPLETE, but it's a start
-import type {ReactNode, ComponentType} from 'react'
-import {Rule} from '../validation'
-import {ReferenceOptions} from '../reference'
-import {AssetSource} from '../assets'
-import {SlugOptions} from '../slug'
-import {SanityDocument} from '../documents'
-import {CurrentUser} from '../user'
+import type {ComponentType} from 'react'
+import type {Rule} from '../validation'
+import type {ReferenceOptions} from '../reference'
+import type {AssetSource} from '../assets'
+import type {SlugOptions} from '../slug'
+import type {SanityDocument} from '../documents'
+import type {CurrentUser} from '../user'
+import type {PreviewConfig} from './preview'
 
 export interface Schema {
   name: string
   get: (name: string) => SchemaType
   has: (name: string) => boolean
   getTypeNames: () => string[]
-}
-
-export interface PreviewValue {
-  title?: ReactNode
-  subtitle?: ReactNode
-  description?: ReactNode
-  media?: ReactNode
-}
-
-export interface PrepareViewOptions {
-  ordering?: SortOrdering
 }
 
 export type SortOrdering = {
@@ -35,7 +25,7 @@ export type SortOrdering = {
 }
 export interface ConditionalPropertyCallbackContext {
   parent?: unknown
-  document: SanityDocument
+  document?: SanityDocument
   currentUser: Omit<CurrentUser, 'role'>
   value: unknown
 }
@@ -89,18 +79,7 @@ export interface BaseSchemaType {
   initialValue?: InitialValueProperty
   options?: Record<string, any>
   validation?: SchemaValidationValue
-  preview?: {
-    select?: PreviewValue
-    prepare: (
-      value: {
-        title?: unknown
-        subtitle?: unknown
-        description?: unknown
-        media?: unknown
-      },
-      viewOptions?: PrepareViewOptions
-    ) => PreviewValue
-  }
+  preview?: PreviewConfig
 
   /**
    * @deprecated
@@ -156,7 +135,6 @@ export interface ArraySchemaType<V = unknown> extends BaseSchemaType {
     layout?: V extends string ? 'tags' : 'grid'
     direction?: 'horizontal' | 'vertical'
     sortable?: boolean
-
     /**
      * @deprecated
      */
@@ -243,21 +221,41 @@ export type ObjectFieldType<T extends SchemaType = SchemaType> = T & {
 export interface ObjectField<T extends SchemaType = SchemaType> {
   name: string
   fieldset?: string
+  group?: string | string[]
   type: ObjectFieldType<T>
+}
+export interface FieldGroup {
+  name: string
+  icon?: React.ComponentType
+  title?: string
+  description?: string
+  hidden?: ConditionalProperty
+  default?: boolean
+  fields?: ObjectField[]
 }
 
 export interface ObjectSchemaType extends BaseSchemaType {
   jsonType: 'object'
   fields: ObjectField[]
+  groups?: FieldGroup[]
   fieldsets?: Fieldset[]
   initialValue?: InitialValueProperty<Record<string, unknown>>
   weak?: boolean
 
   // Experimentals
-  // Note: `path` is a string in the _specification_, but converted to a
-  // string array in the schema normalization/compilation step
   // eslint-disable-next-line camelcase
-  __experimental_search?: {path: string[]; weight: number; mapWith?: string}[]
+  __experimental_search: ExperimentalSearchPath[]
+  // eslint-disable-next-line camelcase
+  __experimental_omnisearch_visibility?: boolean
+}
+
+export interface ExperimentalSearchPath {
+  // Note: `path` is a string in the _specification_, but converted to a
+  // string/number array in the schema normalization/compilation step
+  // a path segment is a number when specified like array.0.prop in preview config.
+  path: (string | number)[]
+  weight: number
+  mapWith?: string
 }
 
 export interface ObjectSchemaTypeWithOptions extends ObjectSchemaType {
@@ -271,6 +269,7 @@ export interface SingleFieldSet {
   field: ObjectField
   hidden?: ConditionalProperty
   readOnly?: ConditionalProperty
+  group?: string | string[]
 }
 
 export interface MultiFieldSet {
@@ -278,6 +277,7 @@ export interface MultiFieldSet {
   title?: string
   description?: string
   single?: false
+  group?: string | string[]
   options?: CollapseOptions & {
     columns?: number
   }

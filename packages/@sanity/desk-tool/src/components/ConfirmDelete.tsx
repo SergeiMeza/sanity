@@ -1,3 +1,6 @@
+///////////////////////////////////////////////////////////////
+/// THIS FILE IS TO BE REMOVED! BACKWARDS COMPATIBILITY ETC ///
+///////////////////////////////////////////////////////////////
 import {LegacyLayerProvider} from '@sanity/base/components'
 import {WarningOutlineIcon} from '@sanity/icons'
 import {Box, Button, Card, Dialog, Flex, Grid, Spinner, Text} from '@sanity/ui'

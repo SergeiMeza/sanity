@@ -18,7 +18,7 @@ import {SchemaErrorReporter} from '../schemaErrors/SchemaErrorReporter'
 import {SideMenu} from '../sideMenu'
 import {Navbar} from '../navbar'
 import {useDefaultLayoutRouter} from '../useDefaultLayoutRouter'
-import {RootFlex, MainAreaFlex, ToolBox, SidecarBox, PortalDiv} from './styles'
+import {RootFlex, MainAreaFlex, ToolBox, SidecarBox} from './styles'
 import {LoadingScreen} from './LoadingScreen'
 
 const newDocumentOptions = getNewDocumentOptions()
@@ -29,11 +29,11 @@ export const DefaultLayout = memo(function DefaultLayout() {
   const [menuIsOpen, setMenuIsOpen] = useState<boolean>(false)
   const [showLoadingScreen, setShowLoadingScreen] = useState<boolean>(true)
   const [loaded, setLoaded] = useState<boolean>(false)
-  const [searchIsOpen, setSearchIsOpen] = useState<boolean>(false)
+  const [searchFullscreenIsOpen, setSearchFullscreenIsOpen] = useState<boolean>(false)
   const [loadingScreenElement, setLoadingScreenElement] = useState<HTMLDivElement | null>(null)
-  const [portalElement, setPortalElement] = useState<HTMLDivElement | null>(null)
-  const {value: currentUser} = useCurrentUser()
+  const [createButtonElement, setCreateButtonElement] = useState<HTMLButtonElement | null>(null)
 
+  const {value: currentUser} = useCurrentUser()
   const [templatePermissions, isTemplatePermissionsLoading] = useTemplatePermissions(
     newDocumentOptions
   )
@@ -65,7 +65,12 @@ export const DefaultLayout = memo(function DefaultLayout() {
 
   const handleActionModalClose = useCallback(() => {
     setCreateMenuIsOpen(false)
-  }, [])
+
+    // Restore focus on the button when closing the dialog
+    if (createButtonElement) {
+      createButtonElement.focus()
+    }
+  }, [createButtonElement])
 
   const handleToggleMenu = useCallback(() => {
     setMenuIsOpen((prev) => !prev)
@@ -79,8 +84,8 @@ export const DefaultLayout = memo(function DefaultLayout() {
     userStore.actions.logout()
   }, [])
 
-  const handleSearchOpen = useCallback((open) => {
-    setSearchIsOpen(open)
+  const handleSearchFullscreenOpen = useCallback((open) => {
+    setSearchFullscreenIsOpen(open)
   }, [])
 
   const renderContent = () => {
@@ -103,8 +108,9 @@ export const DefaultLayout = memo(function DefaultLayout() {
             onCreateButtonClick={handleCreateButtonClick}
             onToggleMenu={handleToggleMenu}
             onUserLogout={handleLogout}
-            onSearchOpen={handleSearchOpen}
-            searchPortalElement={portalElement}
+            onSearchFullscreenOpen={handleSearchFullscreenOpen}
+            searchFullscreenOpen={searchFullscreenIsOpen}
+            setCreateButtonElement={setCreateButtonElement}
           />
         </LegacyLayerProvider>
 
@@ -128,19 +134,16 @@ export const DefaultLayout = memo(function DefaultLayout() {
             data-testid="default-layout__tool-box"
             direction="column"
             flex={1}
-            hidden={searchIsOpen}
+            hidden={searchFullscreenIsOpen}
             height="fill"
           >
             <RouteScope scope={tool}>
               <RenderTool tool={tool} />
             </RouteScope>
           </ToolBox>
-
-          <SidecarBox hidden={searchIsOpen}>
+          <SidecarBox hidden={searchFullscreenIsOpen}>
             <Sidecar />
           </SidecarBox>
-
-          {searchIsOpen && <PortalDiv ref={setPortalElement} />}
         </MainAreaFlex>
 
         {createMenuIsOpen && (

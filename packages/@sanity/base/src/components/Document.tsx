@@ -12,6 +12,7 @@ export interface DocumentAsset {
 export interface DocumentProps {
   basePath?: string
   charset?: string
+  lang?: string
   title?: string
   viewport?: string
   loading?: React.ReactNode
@@ -29,6 +30,7 @@ export default function Document(props: DocumentProps) {
     charset = 'utf-8',
     title = 'Sanity',
     viewport = 'width=device-width, initial-scale=1, viewport-fit=cover',
+    lang = 'en',
     loading = 'Connecting to Sanity.io',
     staticPath: staticPathProp = '/static',
     favicons: faviconsProp = DEFAULT_FAVICONS,
@@ -72,12 +74,13 @@ export default function Document(props: DocumentProps) {
   )
 
   return (
-    <html>
+    <html lang={lang}>
       <head>
         <meta charSet={charset} />
         <title>{title}</title>
         <meta name="viewport" content={viewport} />
         <meta name="robots" content="noindex" />
+        <meta name="referrer" content="same-origin" />
         <style>{`html {background-color: #f1f3f6;}`}</style>
         {stylesheets}
         {subresources}

@@ -267,8 +267,8 @@ export class Controller {
     }
 
     const url = `/data/history/${dataset}/transactions/${publishedId},${draftId}?${queryParams}`
-
-    const stream = await getJsonStream(this.client.getUrl(url))
+    const {token} = this.client.config()
+    const stream = await getJsonStream(this.client.getUrl(url), token || undefined)
     const reader = stream.getReader()
     let count = 0
 

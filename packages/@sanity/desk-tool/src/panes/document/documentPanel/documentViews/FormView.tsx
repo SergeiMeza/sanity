@@ -16,8 +16,11 @@ import {FormBuilder} from 'part:@sanity/form-builder'
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import {tap} from 'rxjs/operators'
 import {SanityDocument} from '@sanity/client'
+import {ObjectField, ObjectSchemaTypeWithOptions} from '@sanity/types'
 import {useDocumentPane} from '../../useDocumentPane'
 import {Delay} from '../../../../components/Delay'
+import {useConditionalToast} from './useConditionalToast'
+import {useEditState} from '@sanity/react-hooks'
 
 interface FormViewProps {
   granted: boolean
@@ -25,8 +28,12 @@ interface FormViewProps {
   margins: [number, number, number, number]
 }
 
+export interface FilterFieldOptions {
+  (type: ObjectSchemaTypeWithOptions, field: ObjectField): boolean
+}
+
 interface FormViewState {
-  filterField: () => boolean
+  filterField: FilterFieldOptions
 }
 
 const INITIAL_STATE: FormViewState = {
@@ -40,7 +47,6 @@ export function FormView(props: FormViewProps) {
   const {hidden, margins, granted} = props
   const {
     compareValue,
-    displayed: value,
     documentId,
     documentSchema,
     documentType,
@@ -48,12 +54,16 @@ export function FormView(props: FormViewProps) {
     handleChange,
     handleFocus,
     historyController,
+    initialValue,
     markers,
     ready,
+    changesOpen,
   } = useDocumentPane()
-  const presence = useDocumentPresence(documentId)
+  const editState = useEditState(documentId, documentType)
+  const value = editState.draft || editState.published || initialValue
+  const presence = useDocumentPresence(documentId, {ignoreLastActiveUpdates: true})
   const {revTime: rev} = historyController
-  const [{filterField}, setState] = useState<FormViewState>(INITIAL_STATE)
+  const [{filterField}, setFilterField] = useState<FormViewState>(INITIAL_STATE)
 
   const hasTypeMismatch = value !== null && value._type !== documentSchema.name
   const isNonExistent = !value || !value._id
@@ -85,9 +95,9 @@ export function FormView(props: FormViewProps) {
   useEffect(() => {
     if (!filterFieldFn$) return undefined
 
-    const sub = filterFieldFn$.subscribe((nextFilterField: any) =>
-      setState({filterField: nextFilterField})
-    )
+    const sub = filterFieldFn$.subscribe((nextFieldFilter) => {
+      setFilterField(nextFieldFilter ? {filterField: nextFieldFilter} : INITIAL_STATE)
+    })
 
     return () => sub.unsubscribe()
   }, [])
@@ -95,6 +105,16 @@ export function FormView(props: FormViewProps) {
   const handleBlur = useCallback(() => {
     // do nothing
   }, [])
+
+  const isLocked = editState?.transactionSyncLock?.enabled
+
+  useConditionalToast({
+    id: `sync-lock-${documentId}`,
+    status: 'warning',
+    enabled: isLocked,
+    title: `Syncing document…`,
+    description: `Please hold tight while the document is synced. This usually happens right after the document has been published, and it shouldn't take more than a few seconds`,
+  })
 
   useEffect(() => {
     const sub = documentStore.pair
@@ -153,12 +173,13 @@ export function FormView(props: FormViewProps) {
               type={documentSchema}
               presence={presence}
               filterField={filterField}
-              readOnly={isReadOnly}
+              readOnly={isReadOnly || editState?.transactionSyncLock?.enabled}
               onBlur={handleBlur}
               onFocus={handleFocus}
               focusPath={focusPath}
               onChange={isReadOnly ? noop : handleChange}
               markers={markers}
+              changesOpen={changesOpen}
             />
           ) : (
             <Delay ms={300}>
@@ -177,21 +198,22 @@ export function FormView(props: FormViewProps) {
       </PresenceOverlay>
     )
   }, [
-    compareValue,
-    documentSchema,
-    filterField,
-    focusPath,
-    handleBlur,
-    handleChange,
-    handleFocus,
     hasTypeMismatch,
     margins,
-    markers,
-    patchChannelRef,
-    presence,
     ready,
-    isReadOnly,
     value,
+    compareValue,
+    documentSchema,
+    presence,
+    filterField,
+    isReadOnly,
+    editState?.transactionSyncLock?.enabled,
+    handleBlur,
+    handleFocus,
+    focusPath,
+    handleChange,
+    markers,
+    changesOpen,
   ])
 
   const after = useMemo(

@@ -1,5 +1,5 @@
 import {defer, partition, merge, of, throwError, asyncScheduler, Observable} from 'rxjs'
-import {mergeMap, throttleTime, share, take} from 'rxjs/operators'
+import {mergeMap, throttleTime, share, take, filter} from 'rxjs/operators'
 import {exhaustMapToWithTrailing} from 'rxjs-exhaustmap-with-trailing'
 import {getVersionedClient} from '../../client/versionedClient'
 import {ReconnectEvent, WelcomeEvent, MutationEvent} from './types'
@@ -9,6 +9,8 @@ type Params = Record<string, string | number | boolean | string[]>
 export interface ListenQueryOptions {
   tag?: string
   apiVersion?: string
+  throttleTime?: number
+  transitions?: ('update' | 'appear' | 'disappear')[]
 }
 
 const fetch = (query: string, params: Params, options: ListenQueryOptions) =>
@@ -38,13 +40,16 @@ function isWelcomeEvent(
 // todo: promote as building block for better re-use
 // todo: optimize by patching collection in-place
 export const listenQuery = (
-  query: string,
+  query: string | {fetch: string; listen: string},
   params: Params = {},
   options: ListenQueryOptions = {}
 ) => {
-  const fetchOnce$ = fetch(query, params, options)
+  const fetchQuery = typeof query === 'string' ? query : query.fetch
+  const listenerQuery = typeof query === 'string' ? query : query.listen
 
-  const events$ = listen(query, params, options).pipe(
+  const fetchOnce$ = fetch(fetchQuery, params, options)
+
+  const events$ = listen(listenerQuery, params, options).pipe(
     mergeMap((ev, i) => {
       const isFirst = i === 0
       if (isFirst && !isWelcomeEvent(ev)) {
@@ -64,9 +69,19 @@ export const listenQuery = (
   )
 
   const [welcome$, mutationAndReconnect$] = partition(events$, isWelcomeEvent)
+  const isRelevantEvent = (event: MutationEvent | ReconnectEvent | WelcomeEvent): boolean => {
+    if (!options.transitions || event.type !== 'mutation') {
+      return true
+    }
+
+    return options.transitions.includes(event.transition)
+  }
 
   return merge(
     welcome$.pipe(take(1)),
-    mutationAndReconnect$.pipe(throttleTime(1000, asyncScheduler, {leading: true, trailing: true}))
+    mutationAndReconnect$.pipe(
+      filter(isRelevantEvent),
+      throttleTime(options.throttleTime || 1000, asyncScheduler, {leading: true, trailing: true})
+    )
   ).pipe(exhaustMapToWithTrailing(fetchOnce$))
 }

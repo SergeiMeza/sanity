@@ -1,4 +1,4 @@
-import React, {useCallback, useMemo, useRef, useState} from 'react'
+import React, {SyntheticEvent, useCallback, useMemo, useRef, useState} from 'react'
 import {
   PortableTextChild,
   PortableTextEditor,
@@ -24,6 +24,7 @@ interface AnnotationProps {
   onFocus: (path: Path) => void
   renderCustomMarkers: RenderCustomMarkers
   type: Type
+  readOnly: boolean
   value: PortableTextChild
   scrollElement: HTMLElement
 }
@@ -62,7 +63,10 @@ const TooltipBox = styled(Box).attrs({forwardedAs: 'span'})`
   max-width: 250px;
 `
 
-export function Annotation(props: AnnotationProps) {
+export const Annotation = React.forwardRef(function Annotation(
+  props: AnnotationProps,
+  forwardedRef: React.ForwardedRef<HTMLSpanElement>
+) {
   const {
     attributes,
     children,
@@ -72,6 +76,7 @@ export function Annotation(props: AnnotationProps) {
     onFocus,
     renderCustomMarkers,
     scrollElement,
+    readOnly,
     type,
     value,
   } = props
@@ -109,15 +114,20 @@ export function Annotation(props: AnnotationProps) {
     [markers, renderCustomMarkers, text]
   )
 
-  const handleEditClick = useCallback((): void => {
-    onFocus(markDefPath.concat(FOCUS_TERMINATOR))
-  }, [markDefPath, onFocus])
+  const handleEditClick = useCallback(
+    (event: SyntheticEvent): void => {
+      event.preventDefault()
+      event.stopPropagation()
+      PortableTextEditor.blur(editor)
+      onFocus(markDefPath.concat(FOCUS_TERMINATOR))
+    },
+    [editor, markDefPath, onFocus]
+  )
 
   const handleRemoveClick = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>): void => {
       event.preventDefault()
       event.stopPropagation()
-
       PortableTextEditor.removeAnnotation(editor, type)
       PortableTextEditor.focus(editor)
     },
@@ -143,6 +153,11 @@ export function Annotation(props: AnnotationProps) {
 
   const hasCustomMarkers = markers.filter((m) => !isValidationMarker(m)).length > 0
 
+  const handleReadOnlyClick = useCallback(() => onFocus(markDefPath.concat(FOCUS_TERMINATOR)), [
+    markDefPath,
+    onFocus,
+  ])
+
   return (
     <Root
       $toneKey={toneKey}
@@ -151,17 +166,19 @@ export function Annotation(props: AnnotationProps) {
       data-error={hasError ? '' : undefined}
       data-warning={hasWarning ? '' : undefined}
       data-custom-markers={hasCustomMarkers ? '' : undefined}
+      onClick={readOnly ? handleReadOnlyClick : undefined}
     >
-      {markersToolTip || text}
-
-      <AnnotationToolbarPopover
-        textElement={textElement}
-        annotationElement={annotationRef?.current}
-        scrollElement={scrollElement}
-        onEdit={handleEditClick}
-        onDelete={handleRemoveClick}
-        title={type?.title || type.name}
-      />
+      <span ref={forwardedRef}>{markersToolTip || text}</span>
+      {attributes.focused && !readOnly && (
+        <AnnotationToolbarPopover
+          textElement={textElement}
+          annotationElement={annotationRef?.current}
+          scrollElement={scrollElement}
+          onEdit={handleEditClick}
+          onDelete={handleRemoveClick}
+          title={type?.title || type.name}
+        />
+      )}
     </Root>
   )
-}
+})

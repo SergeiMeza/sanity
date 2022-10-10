@@ -1,6 +1,6 @@
 /* eslint-disable max-nested-callbacks */
-import {ConnectableObservable, Subject, timer, Observable, concat, of} from 'rxjs'
-import {buffer, takeWhile, first, publish, mapTo} from 'rxjs/operators'
+import {concat, ConnectableObservable, Observable, of, Subject, timer} from 'rxjs'
+import {buffer, first, publish, takeWhile} from 'rxjs/operators'
 import type {EditStateFor} from './editState'
 
 type VersionedClient = typeof import('../../../client/versionedClient').versionedClient
@@ -92,11 +92,12 @@ describe('validation', () => {
       draft: {
         _id: 'example-id',
         _createdAt: '2021-09-07T16:23:52.256Z',
-        _rev: 'exampleRev',
+        _rev: 'exampleRev1',
         _type: 'movie',
         _updatedAt: '2021-09-07T16:23:52.256Z',
         title: 5,
       },
+      transactionSyncLock: null,
       liveEdit: false,
       published: undefined,
       type: 'movie',
@@ -134,11 +135,12 @@ describe('validation', () => {
       draft: {
         _id: 'example-id',
         _createdAt: '2021-09-07T16:23:52.256Z',
-        _rev: 'exampleRev',
+        _rev: 'exampleRev2',
         _type: 'movie',
         _updatedAt: '2021-09-07T16:23:52.256Z',
         title: 5,
       },
+      transactionSyncLock: null,
       liveEdit: false,
       published: undefined,
       type: 'movie',
@@ -153,11 +155,12 @@ describe('validation', () => {
       draft: {
         _id: 'example-id',
         _createdAt: '2021-09-07T16:23:52.256Z',
-        _rev: 'exampleRev',
+        _rev: 'exampleRev3',
         _type: 'movie',
         _updatedAt: '2021-09-07T16:23:52.256Z',
         title: 'valid title',
       },
+      transactionSyncLock: null,
       liveEdit: false,
       published: undefined,
       type: 'movie',
@@ -180,11 +183,13 @@ describe('validation', () => {
 
     const subject = new Subject()
 
-    mockObserveDocumentPairAvailability.mockImplementation(((() =>
-      concat(
-        of({published: {available: true}}),
-        subject.pipe(mapTo({published: {available: false}}))
-      )) as unknown) as ObserveDocumentPairAvailability)
+    mockObserveDocumentPairAvailability.mockImplementation(((id) =>
+      id === 'example-ref-id'
+        ? concat(of({published: {available: true}}), subject)
+        : concat(
+            of({published: {available: true}}),
+            of({published: {available: true}})
+          )) as ObserveDocumentPairAvailability)
 
     // simulate first emission from validation listener
     mockEditStateSubject.next({
@@ -192,13 +197,14 @@ describe('validation', () => {
       draft: {
         _id: 'example-id',
         _createdAt: '2021-09-07T16:23:52.256Z',
-        _rev: 'exampleRev',
+        _rev: 'exampleRev4',
         _type: 'movie',
         _updatedAt: '2021-09-07T16:23:52.256Z',
         title: 'testing',
         exampleRef: {_ref: 'example-ref-id'},
         exampleRefTwo: {_ref: 'example-ref-other'},
       },
+      transactionSyncLock: null,
       liveEdit: false,
       published: undefined,
       type: 'movie',
@@ -206,21 +212,19 @@ describe('validation', () => {
     })
     await doneValidating()
 
-    mockObserveDocumentPairAvailability.mockImplementation(((id: string) =>
-      id === 'example-ref-id'
-        ? of({published: {available: false}})
-        : of({published: {available: true}})) as ObserveDocumentPairAvailability)
-    subject.next()
+    subject.next({published: {available: false}})
 
     await doneValidating()
 
     // close the buffer
     closeSubscription()
 
-    await expect(subscription).resolves.toMatchObject([
-      {isValidating: true, markers: []},
-      {isValidating: false, markers: []},
-      {isValidating: true, markers: []},
+    const res = await subscription
+
+    expect(res).toMatchObject([
+      {isValidating: true, markers: [], revision: 'exampleRev4'},
+      {isValidating: false, markers: [], revision: 'exampleRev4'},
+      {isValidating: true, markers: [], revision: 'exampleRev4'},
       {
         isValidating: false,
         markers: [
@@ -251,11 +255,12 @@ describe('validation', () => {
       draft: {
         _id: 'example-id',
         _createdAt: '2021-09-07T16:23:52.256Z',
-        _rev: 'exampleRev',
+        _rev: 'exampleRev5',
         _type: 'movie',
         _updatedAt: '2021-09-07T16:23:52.256Z',
         title: 5,
       },
+      transactionSyncLock: null,
       liveEdit: false,
       published: undefined,
       type: 'movie',
@@ -310,14 +315,12 @@ describe('validation', () => {
       published: undefined,
       type: 'movie',
       ready: true,
+      transactionSyncLock: null,
     })
 
     await doneValidating()
     closeSubscription()
 
-    await expect(subscription).resolves.toMatchObject([
-      {isValidating: true, markers: []},
-      {isValidating: false, markers: []},
-    ])
+    await expect(subscription).resolves.toMatchObject([{isValidating: false, markers: []}])
   })
 })

@@ -1,5 +1,5 @@
 import {UserAvatar} from '@sanity/base/components'
-import {useGlobalPresence} from '@sanity/base/hooks'
+import {useGlobalPresenceUsers, useGlobalPresence} from '@sanity/base/hooks'
 import {
   Card,
   AvatarStack,
@@ -16,13 +16,14 @@ import {
 import {CogIcon, UsersIcon} from '@sanity/icons'
 import React, {useMemo} from 'react'
 import styled from 'styled-components'
-import {versionedClient} from '../../versionedClient'
 import {StatusButton} from '../components'
-import {PresenceMenuItem} from '.'
+import {PresenceMenuItem} from './PresenceMenuItem'
 
 type PresenceMenuProps = {
   collapse?: boolean
   maxAvatars?: number
+  projectId: string
+  label?: string
 }
 const AvatarStackCard = styled(Card)`
   background: transparent;
@@ -44,10 +45,10 @@ const PRESENCE_MENU_POPOVER_PROPS: MenuButtonProps['popover'] = {
   scheme: 'light',
 }
 
-export function PresenceMenu({collapse, maxAvatars}: PresenceMenuProps) {
-  const {projectId} = versionedClient.config()
-  const presence = useGlobalPresence()
-  const hasPresence = presence.length > 0
+export function PresenceMenu(props: PresenceMenuProps) {
+  const {collapse, maxAvatars, projectId, label = 'Who is here'} = props
+  const users = useGlobalPresenceUsers()
+  const hasPresence = users.length > 0
 
   const button = useMemo(
     () =>
@@ -56,19 +57,20 @@ export function PresenceMenu({collapse, maxAvatars}: PresenceMenuProps) {
           icon={UsersIcon}
           mode="bleed"
           statusTone={hasPresence ? 'positive' : undefined}
+          aria-label={label}
         />
       ) : (
-        <Button mode="bleed" padding={1}>
+        <Button mode="bleed" padding={1} aria-label={label}>
           <AvatarStackCard>
             <AvatarStack maxLength={maxAvatars}>
-              {presence.map((item) => (
-                <UserAvatar key={item.user.id} user={item.user} />
+              {users.map((user) => (
+                <UserAvatar key={user.id} user={user} />
               ))}
             </AvatarStack>
           </AvatarStackCard>
         </Button>
       ),
-    [collapse, maxAvatars, presence, hasPresence]
+    [collapse, maxAvatars, users, hasPresence]
   )
 
   return (
@@ -78,42 +80,50 @@ export function PresenceMenu({collapse, maxAvatars}: PresenceMenuProps) {
       id="presence-menu"
       placement="bottom"
       menu={
-        <StyledMenu padding={0}>
-          {!hasPresence && (
-            <Box paddingX={3} paddingY={4}>
-              <Stack space={3}>
-                <Text weight="semibold" size={2}>
-                  No one else is here
-                </Text>
-                <Text size={1} muted>
-                  Invite people to the project to see their online status.
-                </Text>
-              </Stack>
-            </Box>
-          )}
-          {hasPresence && (
-            <Box padding={1} paddingBottom={0}>
-              {presence.map((item) => (
-                <PresenceMenuItem presence={item} key={item.user.id} />
-              ))}
-            </Box>
-          )}
-          <FooterCard padding={1} paddingTop={0} radius={3}>
-            <Stack space={1}>
-              <MenuDivider />
-              <MenuItem
-                as="a"
-                text="Manage members"
-                paddingY={4}
-                iconRight={CogIcon}
-                href={`https://sanity.io/manage/project/${projectId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              />
-            </Stack>
-          </FooterCard>
-        </StyledMenu>
+        hasPresence ? <PresenceMenuContent projectId={projectId} /> : <StyledMenu padding={0} />
       }
     />
+  )
+}
+
+function PresenceMenuContent({projectId}: {projectId: string}) {
+  const presence = useGlobalPresence()
+  const hasPresence = presence.length > 0
+  return (
+    <StyledMenu padding={0}>
+      {!hasPresence && (
+        <Box paddingX={3} paddingY={4}>
+          <Stack space={3}>
+            <Text weight="semibold" size={2}>
+              No one else is here
+            </Text>
+            <Text size={1} muted>
+              Invite people to the project to see their online status.
+            </Text>
+          </Stack>
+        </Box>
+      )}
+      {hasPresence && (
+        <Box padding={1} paddingBottom={0}>
+          {presence.map((item) => (
+            <PresenceMenuItem presence={item} key={item.user.id} />
+          ))}
+        </Box>
+      )}
+      <FooterCard padding={1} paddingTop={0} radius={3}>
+        <Stack space={1}>
+          <MenuDivider />
+          <MenuItem
+            as="a"
+            text="Manage members"
+            paddingY={4}
+            iconRight={CogIcon}
+            href={`https://sanity.io/manage/project/${projectId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          />
+        </Stack>
+      </FooterCard>
+    </StyledMenu>
   )
 }

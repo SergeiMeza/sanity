@@ -1,3 +1,4 @@
+/* eslint-disable camelcase */
 import React, {useMemo} from 'react'
 import shallowEquals from 'shallow-equals'
 import {
@@ -9,8 +10,9 @@ import {
   SchemaType,
 } from '@sanity/types'
 import {ChangeIndicatorProvider} from '@sanity/base/change-indicators'
+import {ChangeIndicatorValueProvider, useConditionalReadOnly} from '@sanity/base/_internal'
 import * as PathUtils from '@sanity/util/paths'
-import generateHelpUrl from '@sanity/generate-help-url'
+import {generateHelpUrl} from '@sanity/generate-help-url'
 import {FormFieldPresence, FormFieldPresenceContext} from '@sanity/base/presence'
 import PatchEvent from './PatchEvent'
 import {emptyArray} from './utils/empty'
@@ -29,7 +31,7 @@ interface FormBuilderInputProps {
   onFocus: (path: Path) => void
   onBlur: () => void
   readOnly?: ConditionalProperty
-  parent?: Record<string, unknown> | undefined
+  _internal_parent?: Record<string, unknown> | undefined
   presence?: FormFieldPresence[]
   focusPath: Path
   markers: Marker[]
@@ -215,9 +217,9 @@ export class FormBuilderInput extends React.Component<FormBuilderInputProps> {
   }
 
   render() {
-    const {type, parent, value} = this.props
+    const {type, _internal_parent, value} = this.props
     // Separate readOnly in order to resolve it to a boolean type
-    const {readOnly, ...restProps} = this.props
+    const {readOnly, _internal_parent: _, ...restProps} = this.props
     const InputComponent = this.resolveInputComponent(type)
 
     if (!InputComponent) {
@@ -231,7 +233,7 @@ export class FormBuilderInput extends React.Component<FormBuilderInputProps> {
     if (typeof readOnly === 'function' || typeof type.readOnly === 'function') {
       return (
         <ConditionalReadOnlyField
-          parent={parent}
+          parent={_internal_parent}
           value={value}
           readOnly={readOnly ?? type.readOnly}
         >
@@ -294,6 +296,7 @@ function FormBuilderInputInner(props: FormBuilderInputInnerProps) {
     value,
     ...rest
   } = props
+  const conditionalReadOnly = useConditionalReadOnly() ?? readOnly
 
   const presence = presenceProp || context.presence
 
@@ -326,7 +329,7 @@ function FormBuilderInputInner(props: FormBuilderInputInnerProps) {
       isRoot,
       value,
       compareValue: childCompareValue,
-      readOnly,
+      readOnly: conditionalReadOnly,
       markers: childMarkers.length === 0 ? EMPTY_MARKERS : childMarkers,
       type,
       presence: childPresenceInfo,
@@ -347,7 +350,7 @@ function FormBuilderInputInner(props: FormBuilderInputInnerProps) {
       onBlur,
       onChange,
       onFocus,
-      readOnly,
+      conditionalReadOnly,
       rest,
       setInput,
       type,

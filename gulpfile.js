@@ -21,11 +21,11 @@ const DEST_DIR = 'dist'
 // or packages that does their own build (e.g. studios)
 const IGNORED_PACKAGES = [
   'dev/workshop',
-  'examples/depcheck-test',
+  'dev/depcheck-test',
+  /dev\/.*-studio/,
   /examples\/.*-studio/,
   'packages/@sanity/date-input',
   'packages/@sanity/eventsource',
-  'packages/@sanity/generate-help-url',
   'packages/@sanity/plugin-loader',
   'packages/create-sanity',
   'packages/sanity',
@@ -125,7 +125,6 @@ function matchPackages(names) {
 
 const CLI_PKGS = [
   '@sanity/cli',
-  '@sanity/client',
   '@sanity/core',
   '@sanity/export',
   '@sanity/import',

@@ -1,5 +1,6 @@
 import React from 'react'
 import imageUrlBuilder from '@sanity/image-url'
+import {isImageSource} from '@sanity/asset-utils'
 import {ImageUrlFitMode, SanityDocument} from '@sanity/types'
 import {DocumentIcon} from '@sanity/icons'
 import {assetUrlBuilder} from '../../assets'
@@ -83,6 +84,7 @@ export default class SanityDefaultPreview extends React.PureComponent<SanityDefa
     return (
       <img
         alt={isString(value.title) ? value.title : undefined}
+        referrerPolicy="strict-origin-when-cross-origin"
         src={
           imageBuilder
             .image(media)
@@ -103,7 +105,7 @@ export default class SanityDefaultPreview extends React.PureComponent<SanityDefa
     const imageUrl = value.imageUrl
     if (isString(imageUrl)) {
       const assetUrl = assetUrlBuilder(imageUrl.split('?')[0], dimensions)
-      return <img src={assetUrl} alt={isString(value.title) ? value.title : undefined} />
+      return <img src={assetUrl} alt={isString(value.title) ? value.title : ''} />
     }
     return undefined
   }
@@ -128,7 +130,12 @@ export default class SanityDefaultPreview extends React.PureComponent<SanityDefa
     }
 
     // If the asset is on media
-    if (isRecord(value.media) && value.media._type === 'reference' && value.media._ref) {
+    if (
+      isRecord(value.media) &&
+      value.media._type === 'reference' &&
+      value.media._ref &&
+      isImageSource(media)
+    ) {
       return this.renderMedia
     }
 
@@ -138,7 +145,7 @@ export default class SanityDefaultPreview extends React.PureComponent<SanityDefa
     }
 
     // Handle sanity image
-    if (isRecord(media) && media.asset) {
+    if (isRecord(media) && media.asset && isImageSource(media)) {
       return this.renderMedia
     }
 

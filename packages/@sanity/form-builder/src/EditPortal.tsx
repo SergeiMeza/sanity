@@ -24,7 +24,7 @@ export function EditPortal(props: Props) {
   if (type === 'fullscreen') {
     return (
       <Layer>
-        <Dialog width="auto" id={id} onClose={onClose} header={header}>
+        <Dialog width="auto" id={id} onClose={onClose} header={header} __unstable_autoFocus={false}>
           <PresenceOverlay margins={PRESENCE_MARGINS}>
             <Box padding={4}>{children}</Box>
           </PresenceOverlay>
@@ -41,19 +41,14 @@ export function EditPortal(props: Props) {
     }
 
     return (
-      <PopoverDialog
-        onClose={onClose}
-        referenceElement={referenceElement}
-        placement="auto"
-        title={header}
-      >
+      <PopoverDialog onClose={onClose} referenceElement={referenceElement} title={header}>
         <PresenceOverlay margins={PRESENCE_MARGINS}>{children}</PresenceOverlay>
       </PopoverDialog>
     )
   }
 
   return (
-    <Dialog width={1} id={id} onClose={onClose} header={header}>
+    <Dialog width={1} id={id} onClose={onClose} header={header} __unstable_autoFocus={false}>
       <PresenceOverlay margins={PRESENCE_MARGINS}>
         <Box padding={4}>{children}</Box>
       </PresenceOverlay>

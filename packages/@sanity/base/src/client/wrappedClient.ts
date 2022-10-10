@@ -11,10 +11,11 @@
  * client.fetch(...)
  * ```
  */
-import sanityClient from '@sanity/client'
-import generateHelpUrl from '@sanity/generate-help-url'
+import sanityClient, {ClientConfig, SanityClient} from '@sanity/client'
+import {generateHelpUrl} from '@sanity/generate-help-url'
 import config from 'config:sanity'
 import configureClient from 'part:@sanity/base/configure-client?'
+import {authToken$} from '../datastores/authState'
 
 const fallbackConfig = {projectId: 'UNSPECIFIED', dataset: 'UNSPECIFIED'}
 const apiConfig = {
@@ -59,7 +60,7 @@ export const wrappedClient = {
     return configuredClient.clientConfig
   },
 
-  withConfig: (newConfig) => {
+  withConfig: (newConfig: Partial<ClientConfig>): SanityClient => {
     if (!newConfig || !newConfig.apiVersion) {
       throw new Error(
         `Client \`withConfig()\` called without an \`apiVersion\` - see ${generateHelpUrl(
@@ -67,9 +68,19 @@ export const wrappedClient = {
         )}`
       )
     }
-
     const newClient = configuredClient.clone().config(newConfig)
     instances.push(newClient)
+    // Subscribe to auth token stream and configure the client depending on token value unless the client was originally configured with a token.
+    const preconfiguredToken = Boolean(configuredClient.config().token)
+    if (!preconfiguredToken) {
+      authToken$.subscribe((token) => {
+        const currentHasToken = Boolean(newClient.config().token)
+        const nextHasToken = Boolean(token)
+        if (currentHasToken !== nextHasToken) {
+          newClient.config({...newConfig, token, ignoreBrowserTokenWarning: true})
+        }
+      })
+    }
     return newClient
   },
 }

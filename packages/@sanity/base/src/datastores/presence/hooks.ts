@@ -1,2 +1,2 @@
-export {useGlobalPresence} from './useGlobalPresence'
-export {useDocumentPresence} from './useDocumentPresence'
+export {useGlobalPresence, useGlobalPresenceUsers} from './useGlobalPresence'
+export {useDocumentPresence, useDocumentPresenceUsers} from './useDocumentPresence'

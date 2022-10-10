@@ -96,7 +96,6 @@ export function EditObjectsStory() {
       editorPath,
       formBuilderPath: focusPath,
       kind: kind as any,
-      returnToSelection: null,
     }),
     [editorPath, focusPath, kind]
   )
@@ -130,6 +129,7 @@ export function EditObjectsStory() {
               onClose={handleClose}
               onFocus={handleFocus}
               presence={presence}
+              scrollElement={portal.boundaryElement}
               readOnly={readOnly}
               value={value}
             />

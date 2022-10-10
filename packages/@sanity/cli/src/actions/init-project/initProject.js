@@ -1,7 +1,9 @@
+/* eslint-disable max-statements, complexity */
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import fse from 'fs-extra'
+import pFilter from 'p-filter'
 import resolveFrom from 'resolve-from'
 import deburr from 'lodash/deburr'
 import noop from 'lodash/noop'
@@ -14,17 +16,18 @@ import getProjectDefaults from '../../util/getProjectDefaults'
 import createProject from '../project/createProject'
 import login from '../login/login'
 import dynamicRequire from '../../util/dynamicRequire'
+import {prefixCommand} from '../../util/isNpx'
 import promptForDatasetName from './promptForDatasetName'
 import bootstrapTemplate from './bootstrapTemplate'
 import templates from './templates'
 
 /* eslint-disable no-process-env */
+const commandPrefix = prefixCommand()
 const isCI = process.env.CI
 const sanityEnv = process.env.SANITY_INTERNAL_ENV
 const environment = sanityEnv ? sanityEnv : process.env.NODE_ENV
 /* eslint-enable no-process-env */
 
-// eslint-disable-next-line max-statements, complexity
 export default async function initSanity(args, context) {
   const {output, prompt, workDir, apiClient, yarn, chalk} = context
   const cliFlags = args.extOptions
@@ -32,9 +35,36 @@ export default async function initSanity(args, context) {
   const print = unattended ? noop : output.print
   const specifiedOutputPath = cliFlags['output-path']
   const intendedPlan = cliFlags['project-plan']
+  const intendedCoupon = cliFlags.coupon
+  let selectedPlan
   let reconfigure = cliFlags.reconfigure
   let defaultConfig = cliFlags['dataset-default']
   let showDefaultConfigPrompt = !defaultConfig
+
+  // Only allow either --project-plan or --coupon
+  if (intendedCoupon && intendedPlan) {
+    throw new Error(
+      'Error! --project-plan and --coupon cannot be used together; please select only one flag'
+    )
+  }
+
+  // Don't allow --coupon and --project
+  if (intendedCoupon && cliFlags.project) {
+    throw new Error(
+      'Error! --project and --coupon cannot be used together; coupons can only be applied to new projects'
+    )
+  }
+
+  if (intendedCoupon) {
+    try {
+      selectedPlan = await getPlanFromCoupon(apiClient, intendedCoupon)
+      print(`Coupon "${intendedCoupon}" validated!\n`)
+    } catch (err) {
+      throw new Error(`Unable to validate coupon code "${intendedCoupon}":\n\n${err.message}`)
+    }
+  } else if (intendedPlan) {
+    selectedPlan = intendedPlan
+  }
 
   // Check if we have a project manifest already
   const manifestPath = path.join(workDir, 'sanity.json')
@@ -81,14 +111,10 @@ export default async function initSanity(args, context) {
     print(`We're first going to make sure you have an account with Sanity.io. Hang on.`)
     print('Press ctrl + C at any time to quit.\n')
   } else {
-    print(`You're setting up a new project!`)
-    print(`We'll make sure you have an account with Sanity.io. Then we'll`)
-    print('install an open-source JS content editor that connects to')
-    print('the real-time hosted API on Sanity.io. Hang on.\n')
+    print(`You're setting up a Sanity.io project!`)
+    print(`We'll make sure you're logged in with Sanity.io.`)
+    print(`Then, we'll install a Sanity Studio for your project.\n`)
     print('Press ctrl + C at any time to quit.\n')
-    print('Prefer web interfaces to terminals?')
-    print('You can also set up best practice Sanity projects with')
-    print('your favorite frontends on https://sanity.io/create\n')
   }
 
   // If the user isn't already authenticated, make it so
@@ -110,7 +136,7 @@ export default async function initSanity(args, context) {
   const {projectId, displayName, isFirstProject} = await getOrCreateProject()
   const sluggedName = deburr(displayName.toLowerCase())
     .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9]/g, '')
+    .replace(/[^a-z0-9-]/g, '')
 
   debug(`Project with name ${displayName} selected`)
 
@@ -132,6 +158,8 @@ export default async function initSanity(args, context) {
   let outputPath = workDir
   let successMessage
   let defaults
+  let importCmd = ''
+  let shouldPrintImportCommand = false
 
   if (reconfigure) {
     // Rewrite project manifest (sanity.json)
@@ -162,7 +190,7 @@ export default async function initSanity(args, context) {
     const hasNodeModules = await fse.pathExists(path.join(workDir, 'node_modules'))
     if (hasNodeModules) {
       print('Skipping installation of dependencies since node_modules exists.')
-      print('Run sanity install to reinstall dependencies')
+      print(`Run ${commandPrefix} install to reinstall dependencies`)
     } else {
       try {
         await yarn(['install'], {...output, rootDir: workDir})
@@ -218,36 +246,44 @@ export default async function initSanity(args, context) {
 
     debug('@sanity/core path resolved to %s', corePath || 'null')
     debug('(from %s)', outputPath)
-    const coreModule = dynamicRequire(corePath)
-    const coreCommands = coreModule && coreModule.commands
 
-    if (!Array.isArray(coreCommands)) {
-      throw new Error('@sanity/core module failed to be resolved')
+    let coreCommands
+    try {
+      const coreModule = corePath && dynamicRequire(corePath)
+      coreCommands = coreModule && coreModule.commands
+    } catch (err) {
+      debug(`Failed to require '@sanity/core': ${err instanceof Error ? err.message : err}`)
     }
 
-    const configCheckCmd = coreCommands.find((cmd) => cmd.name === 'configcheck')
-    await configCheckCmd.action(
-      {extOptions: {quiet: true}},
-      Object.assign({}, context, {
-        workDir: outputPath,
-      })
-    )
+    if (Array.isArray(coreCommands)) {
+      const configCheckCmd = coreCommands.find((cmd) => cmd.name === 'configcheck')
+      await configCheckCmd.action(
+        {extOptions: {quiet: true}},
+        Object.assign({}, context, {
+          workDir: outputPath,
+        })
+      )
 
-    // Prompt for dataset import (if a dataset is defined)
-    if (shouldImport) {
-      await doDatasetImport({
-        outputPath,
-        coreCommands,
-        template,
-        datasetName,
-        context,
-      })
+      // Prompt for dataset import (if a dataset is defined)
+      if (shouldImport) {
+        await doDatasetImport({
+          outputPath,
+          coreCommands,
+          template,
+          datasetName,
+          context,
+        })
 
-      print('')
-      print('If you want to delete the imported data, use')
-      print(`\t${chalk.cyan(`sanity dataset delete ${datasetName}`)}`)
-      print('and create a new clean dataset with')
-      print(`\t${chalk.cyan(`sanity dataset create <name>`)}\n`)
+        print('')
+        print('If you want to delete the imported data, use')
+        print(`\t${chalk.cyan(`${commandPrefix} dataset delete ${datasetName}`)}`)
+        print('and create a new clean dataset with')
+        print(`\t${chalk.cyan(`${commandPrefix} dataset create <name>`)}\n`)
+      }
+    } else {
+      debug('Skipping configcheck since `@sanity/core` could not be found')
+      shouldPrintImportCommand = shouldImport
+      importCmd = `${commandPrefix} dataset import ${template.datasetUrl} ${datasetName}`
     }
 
     // See if the template has a success message handler and print it
@@ -256,17 +292,30 @@ export default async function initSanity(args, context) {
       : ''
   }
 
-  print(`\n${chalk.green('Success!')} Now what?\n`)
-
   const isCurrentDir = outputPath === process.cwd()
-  if (!isCurrentDir) {
-    print(`▪ ${chalk.cyan(`cd ${outputPath}`)}, then:`)
+  if (isCurrentDir && shouldPrintImportCommand) {
+    print(`\n${chalk.green('Success!')} Now, use these commands to continue:\n`)
+    print(`First: ${chalk.cyan(importCmd)} - to import the sample data`)
+    print(`Then:  ${chalk.cyan(`${commandPrefix} start`)} - to run Sanity Studio\n`)
+  } else if (isCurrentDir) {
+    print(`\n${chalk.green('Success!')} Now, use this command to continue:\n`)
+    print(`${chalk.cyan(`${commandPrefix} start`)} - to run Sanity Studio\n`)
+  } else if (shouldPrintImportCommand) {
+    print(`\n${chalk.green('Success!')} Now, use these commands to continue:\n`)
+    print(`First: ${chalk.cyan(`cd ${outputPath}`)} - to enter project’s directory`)
+    print(`Then:  ${chalk.cyan(importCmd)}`)
+    print(`       (to import the sample data)`)
+    print(`Lastly: ${chalk.cyan(`${commandPrefix} start`)} - to run Sanity Studio\n`)
+  } else {
+    print(`\n${chalk.green('Success!')} Now, use these commands to continue:\n`)
+    print(`First: ${chalk.cyan(`cd ${outputPath}`)} - to enter project’s directory`)
+    print(`Then:  ${chalk.cyan(`${commandPrefix} start`)} - to run Sanity Studio\n`)
   }
 
-  print(`▪ ${chalk.cyan('sanity docs')} to open the documentation in a browser`)
-  print(`▪ ${chalk.cyan('sanity manage')} to open the project settings in a browser`)
-  print(`▪ ${chalk.cyan('sanity help')} to explore the CLI manual`)
-  print(`▪ ${chalk.green('sanity start')} to run your studio\n`)
+  print(`Other helpful commands`)
+  print(`${commandPrefix} docs - to open the documentation in a browser`)
+  print(`${commandPrefix} manage - to open the project settings in a browser`)
+  print(`${commandPrefix} help - to explore the CLI manual`)
 
   if (successMessage) {
     print(`\n${successMessage}`)
@@ -303,8 +352,15 @@ export default async function initSanity(args, context) {
 
   async function getOrCreateProject() {
     let projects
+    let organizations
     try {
-      projects = await apiClient({requireProject: false}).projects.list()
+      const client = apiClient({requireUser: true, requireProject: false})
+      const [allProjects, allOrgs] = await Promise.all([
+        client.projects.list(),
+        client.request({uri: '/organizations'}),
+      ])
+      projects = allProjects
+      organizations = allOrgs
     } catch (err) {
       if (unattended) {
         return {projectId: flags.project, displayName: 'Unknown project', isFirstProject: false}
@@ -332,13 +388,40 @@ export default async function initSanity(args, context) {
       }
     }
 
+    if (flags.organization) {
+      const organization =
+        organizations.find((org) => org.id === flags.organization) ||
+        organizations.find((org) => org.slug === flags.organization)
+
+      if (!organization) {
+        throw new Error(
+          `Given organization ID (${flags.organization}) not found, or you do not have access to it`
+        )
+      }
+
+      if (!(await hasProjectAttachGrant(flags.organization))) {
+        throw new Error(
+          'You lack the necessary permissions to attach a project to this organization'
+        )
+      }
+    }
+
+    // If the user has no projects or is using a coupon (which can only be applied to new projects)
+    // just ask for project details instead of showing a list of projects
     const isUsersFirstProject = projects.length === 0
-    if (isUsersFirstProject) {
-      debug('No projects found for user, prompting for name')
-      const projectName = await prompt.single({message: 'Project name'})
+    if (isUsersFirstProject || intendedCoupon) {
+      debug(
+        isUsersFirstProject
+          ? 'No projects found for user, prompting for name'
+          : 'Using a coupon - skipping project selection'
+      )
+
+      const projectName = await prompt.single({message: 'Project name:'})
       return createProject(apiClient, {
         displayName: projectName,
-        subscription: {planId: intendedPlan},
+        organizationId: await getOrganizationId(organizations),
+        subscription: {planId: selectedPlan},
+        metadata: {coupon: intendedCoupon},
       }).then((response) => ({
         ...response,
         isFirstProject: isUsersFirstProject,
@@ -369,7 +452,9 @@ export default async function initSanity(args, context) {
           message: 'Your project name:',
           default: 'My Sanity Project',
         }),
-        subscription: {planId: intendedPlan},
+        organizationId: await getOrganizationId(organizations),
+        subscription: {planId: selectedPlan},
+        metadata: {coupon: intendedCoupon},
       }).then((response) => ({
         ...response,
         isFirstProject: isUsersFirstProject,
@@ -572,6 +657,12 @@ export default async function initSanity(args, context) {
       )
     }
 
+    if (cliFlags.project && cliFlags.organization) {
+      throw new Error(
+        'You have specified both a project and an organization. To move a project to an organization please visit https://www.sanity.io/manage'
+      )
+    }
+
     if (createProjectName === true) {
       throw new Error('Please specify a project name (`--create-project <name>`)')
     }
@@ -600,7 +691,9 @@ export default async function initSanity(args, context) {
       debug('--create-project specified, creating a new project')
       const createdProject = await createProject(apiClient, {
         displayName: createProjectName.trim(),
-        subscription: {planId: intendedPlan},
+        organizationId: cliFlags.organization || undefined,
+        subscription: {planId: selectedPlan},
+        metadata: {coupon: intendedCoupon},
       })
       debug('Project with ID %s created', createdProject.projectId)
 
@@ -621,6 +714,68 @@ export default async function initSanity(args, context) {
     }
 
     return cliFlags
+  }
+
+  async function getOrganizationId(organizations) {
+    let organizationId = flags.organization
+    if (unattended) {
+      return organizationId || undefined
+    }
+
+    const shouldPrompt = organizations.length > 0 && !organizationId
+    if (shouldPrompt) {
+      debug(`User has ${organizations.length} organization(s), checking attach access`)
+      const withGrant = await getOrganizationsWithAttachGrant(organizations)
+      if (withGrant.length === 0) {
+        debug('User lacks project attach grant in all organizations, not prompting')
+        return undefined
+      }
+
+      debug('User has attach access to %d organizations, prompting.', withGrant.length)
+      const organizationChoices = [
+        {value: 'none', name: 'None'},
+        new prompt.Separator(),
+        ...withGrant.map((organization) => ({
+          value: organization.id,
+          name: `${organization.name} [${organization.id}]`,
+        })),
+      ]
+
+      const chosenOrg = await prompt.single({
+        message: 'Select organization to attach project to',
+        type: 'list',
+        choices: organizationChoices,
+      })
+
+      if (chosenOrg && chosenOrg !== 'none') {
+        organizationId = chosenOrg
+      }
+    } else if (organizationId) {
+      debug(`User has defined organization flag explicitly (%s)`, organizationId)
+    } else if (organizations.length === 0) {
+      debug('User has no organizations, skipping selection prompt')
+    }
+
+    return organizationId || undefined
+  }
+
+  async function hasProjectAttachGrant(organizationId) {
+    const requiredGrantGroup = 'sanity.organization.projects'
+    const requiredGrant = 'attach'
+
+    const client = apiClient({requireProject: false, requireUser: true})
+      .clone()
+      .config({apiVersion: 'v2021-06-07'})
+
+    const grants = await client.request({uri: `organizations/${organizationId}/grants`})
+    const group = grants[requiredGrantGroup] || []
+    return group.some(
+      (resource) => resource.grants && resource.grants.some((grant) => grant.name === requiredGrant)
+    )
+  }
+
+  function getOrganizationsWithAttachGrant(organizations) {
+    return pFilter(organizations, (org) => hasProjectAttachGrant(org.id), {concurrency: 3})
   }
 }
 
@@ -721,4 +876,24 @@ async function doDatasetImport(options) {
       fromInitCommand: true,
     })
   )
+}
+
+async function getPlanFromCoupon(apiClient, couponCode) {
+  const response = await apiClient({
+    requireUser: false,
+    requireProject: false,
+  }).request({
+    method: 'GET',
+    uri: `plans/coupon/${couponCode}`,
+  })
+
+  try {
+    const planId = response[0].id
+    if (!planId) {
+      throw new Error('Unable to find a plan from coupon code')
+    }
+    return planId
+  } catch (err) {
+    throw err
+  }
 }

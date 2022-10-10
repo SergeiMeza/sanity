@@ -1,5 +1,10 @@
 import {DocumentActionComponent} from '@sanity/base'
-import {useSyncState, useDocumentOperation, useValidationStatus} from '@sanity/react-hooks'
+import {
+  useSyncState,
+  useDocumentOperation,
+  useValidationStatus,
+  useEditState,
+} from '@sanity/react-hooks'
 import {CheckmarkIcon, PublishIcon} from '@sanity/icons'
 import React, {useCallback, useEffect, useState} from 'react'
 import {
@@ -14,6 +19,7 @@ const DISABLED_REASON_TITLE = {
   LIVE_EDIT_ENABLED: 'Cannot publish since liveEdit is enabled for this document type',
   ALREADY_PUBLISHED: 'Already published',
   NO_CHANGES: 'No unpublished changes',
+  NOT_READY: 'Operation not ready',
 }
 
 function getDisabledReason(
@@ -36,14 +42,19 @@ function getDisabledReason(
 export const PublishAction: DocumentActionComponent = (props) => {
   const {id, type, liveEdit, draft, published} = props
   const [publishState, setPublishState] = useState<'publishing' | 'published' | null>(null)
-  const {publish}: any = useDocumentOperation(id, type)
+  const {publish} = useDocumentOperation(id, type)
   const validationStatus = useValidationStatus(id, type)
   const syncState = useSyncState(id, type)
-  const {changesOpen, handleHistoryOpen} = useDocumentPane()
+  const {changesOpen, handleHistoryOpen, documentId, documentType} = useDocumentPane()
+  const editState = useEditState(documentId, documentType)
+
+  const revision = (editState?.draft || editState?.published || {})._rev
+
   const hasValidationErrors = validationStatus.markers.some((marker) => marker.level === 'error')
   // we use this to "schedule" publish after pending tasks (e.g. validation and sync) has completed
   const [publishScheduled, setPublishScheduled] = useState<boolean>(false)
-  const isNeitherSyncingNorValidating = !syncState.isSyncing && !validationStatus.isValidating
+  const isSyncing = syncState.isSyncing
+  const isValidating = validationStatus.isValidating
   const [permissions, isPermissionsLoading] = useDocumentPairPermissions({
     id,
     type,
@@ -67,14 +78,28 @@ export const PublishAction: DocumentActionComponent = (props) => {
   }, [publish])
 
   useEffect(() => {
-    if (publishScheduled && isNeitherSyncingNorValidating) {
-      if (!hasValidationErrors) {
-        doPublish()
-      }
+    // make sure the validation status is about the current revision and not an earlier one
+    const validationComplete =
+      validationStatus.isValidating === false && validationStatus.revision !== revision
 
-      setPublishScheduled(false)
+    if (!publishScheduled || isSyncing || !validationComplete) {
+      return
     }
-  }, [isNeitherSyncingNorValidating, doPublish, hasValidationErrors, publishScheduled])
+
+    if (!hasValidationErrors) {
+      doPublish()
+    }
+    setPublishScheduled(false)
+  }, [
+    isSyncing,
+    doPublish,
+    hasValidationErrors,
+    publishScheduled,
+    validationStatus.revision,
+    revision,
+    isValidating,
+    validationStatus.isValidating,
+  ])
 
   useEffect(() => {
     const didPublish = publishState === 'publishing' && !hasDraft
@@ -93,12 +118,22 @@ export const PublishAction: DocumentActionComponent = (props) => {
   }, [changesOpen, publishState, hasDraft, handleHistoryOpen])
 
   const handle = useCallback(() => {
-    if (syncState.isSyncing || validationStatus.isValidating) {
+    if (
+      syncState.isSyncing ||
+      validationStatus.isValidating ||
+      validationStatus.revision !== revision
+    ) {
       setPublishScheduled(true)
     } else {
       doPublish()
     }
-  }, [syncState.isSyncing, validationStatus.isValidating, doPublish])
+  }, [
+    syncState.isSyncing,
+    validationStatus.isValidating,
+    validationStatus.revision,
+    revision,
+    doPublish,
+  ])
 
   if (liveEdit) {
     return {
@@ -126,6 +161,7 @@ export const PublishAction: DocumentActionComponent = (props) => {
 
   const disabled = Boolean(
     publishScheduled ||
+      editState?.transactionSyncLock?.enabled ||
       publishState === 'publishing' ||
       publishState === 'published' ||
       hasValidationErrors ||

@@ -4,10 +4,13 @@ import {ScrollContainer} from '@sanity/base/components'
 import {unstable_useDocumentValuePermissions as useDocumentValuePermissions} from '@sanity/base/hooks'
 import styled, {css} from 'styled-components'
 import {SchemaType} from '@sanity/types'
+import {getPublishedId, getDraftId} from '@sanity/base/_internal'
+import {useEditState} from '@sanity/react-hooks'
 import {PaneContent} from '../../../components/pane'
 import {usePaneLayout} from '../../../components/pane/usePaneLayout'
 import {useDeskTool} from '../../../contexts/deskTool'
 import {useDocumentPane} from '../useDocumentPane'
+import {InspectDialog} from '../inspectDialog'
 import {DocumentPanelHeader} from './header'
 import {FormView} from './documentViews'
 import {PermissionCheckBanner} from './PermissionCheckBanner'
@@ -24,6 +27,7 @@ function getSchemaType(typeName: string): SchemaType | null {
 interface DocumentPanelProps {
   footerHeight: number | null
   rootElement: HTMLDivElement | null
+  isInspectOpen: boolean
 }
 
 const Scroller = styled(ScrollContainer)<{$disabled: boolean}>(({$disabled}) => {
@@ -41,13 +45,12 @@ const Scroller = styled(ScrollContainer)<{$disabled: boolean}>(({$disabled}) => 
 })
 
 export const DocumentPanel = function DocumentPanel(props: DocumentPanelProps) {
-  const {footerHeight, rootElement} = props
+  const {footerHeight, rootElement, isInspectOpen} = props
   const {
     activeViewId,
     displayed,
     documentId,
     documentSchema,
-    editState,
     value,
     views,
     ready,
@@ -60,12 +63,17 @@ export const DocumentPanel = function DocumentPanel(props: DocumentPanelProps) {
   const headerRect = useElementRect(headerElement)
   const portalRef = useRef<HTMLDivElement | null>(null)
   const [documentScrollElement, setDocumentScrollElement] = useState<HTMLDivElement | null>(null)
+  const editState = useEditState(documentId, documentType, 'low')
 
   const requiredPermission = value._createdAt ? 'update' : 'create'
   const liveEdit = useMemo(() => Boolean(getSchemaType(documentType)?.liveEdit), [documentType])
+  const docId = value._id ? value._id : 'dummy-id'
   const docPermissionsInput = useMemo(() => {
-    return {...value, _id: liveEdit ? 'dummy-id' : 'drafts.dummy-id'}
-  }, [liveEdit, value])
+    return {
+      ...value,
+      _id: liveEdit ? getPublishedId(docId) : getDraftId(docId),
+    }
+  }, [liveEdit, value, docId])
   const [permissions, isPermissionsLoading] = useDocumentValuePermissions({
     document: docPermissionsInput,
     permission: requiredPermission,
@@ -124,12 +132,19 @@ export const DocumentPanel = function DocumentPanel(props: DocumentPanelProps) {
     documentScrollElement.scrollTo(0, 0)
   }, [documentId, documentScrollElement])
 
+  const inspectDialog = useMemo(() => {
+    return isInspectOpen ? <InspectDialog value={displayed || value} /> : null
+  }, [isInspectOpen, displayed, value])
+
   return (
     <Flex direction="column" flex={2} overflow={layoutCollapsed ? undefined : 'hidden'}>
       <DocumentPanelHeader rootElement={rootElement} ref={setHeaderElement} />
 
       <PaneContent>
-        <PortalProvider element={portalElement}>
+        <PortalProvider
+          element={portalElement}
+          __unstable_elements={{documentScrollElement: documentScrollElement}}
+        >
           <BoundaryElementProvider element={documentScrollElement}>
             {activeView.type === 'form' && !isPermissionsLoading && ready && (
               <>
@@ -154,6 +169,8 @@ export const DocumentPanel = function DocumentPanel(props: DocumentPanelProps) {
               />
               {activeViewNode}
             </Scroller>
+
+            {inspectDialog}
 
             <div data-testid="document-panel-portal" ref={portalRef} />
           </BoundaryElementProvider>

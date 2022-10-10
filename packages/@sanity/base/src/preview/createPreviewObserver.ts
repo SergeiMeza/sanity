@@ -1,14 +1,20 @@
 import {Observable, of as observableOf} from 'rxjs'
 import {map, switchMap} from 'rxjs/operators'
-import {isReferenceSchemaType, PreviewValue, SchemaType} from '@sanity/types'
+import {
+  isCrossDatasetReference,
+  isCrossDatasetReferenceSchemaType,
+  isReferenceSchemaType,
+  PreviewValue,
+} from '@sanity/types'
 import {isPlainObject} from 'lodash'
 import prepareForPreview, {invokePrepare} from './utils/prepareForPreview'
-import type {Path, PrepareViewOptions, Reference} from './types'
+import type {ApiConfig, Path, PrepareViewOptions} from './types'
 import {getPreviewPaths} from './utils/getPreviewPaths'
 import {observeDocumentTypeFromId} from './observeDocumentTypeFromId'
+import {Previewable, PreviewableType} from './types'
 
 export interface PreparedSnapshot {
-  type?: SchemaType
+  type?: PreviewableType
   snapshot: undefined | PreviewValue
 }
 
@@ -16,17 +22,41 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return isPlainObject(value)
 }
 
+export function isReference(value: unknown): value is {_ref: string} {
+  return isPlainObject(value)
+}
+
 // Takes a value and its type and prepares a snapshot for it that can be passed to a preview component
-export function createPreviewObserver(observePaths: (value: any, paths: Path[]) => any) {
+export function createPreviewObserver(
+  observePaths: (value: Previewable, paths: Path[], apiConfig?: ApiConfig) => any
+) {
   return function observeForPreview(
-    value: Reference,
-    type: SchemaType,
-    viewOptions?: PrepareViewOptions
+    value: Previewable,
+    type: PreviewableType,
+    viewOptions?: PrepareViewOptions,
+    apiConfig?: ApiConfig
   ): Observable<PreparedSnapshot> {
+    if (isCrossDatasetReferenceSchemaType(type)) {
+      // if the value is of type crossDatasetReference, but has no _ref property, we cannot prepare any value for the preview
+      // and the most appropriate thing to do is to return `undefined` for snapshot
+      if (!isCrossDatasetReference(value)) {
+        return observableOf({snapshot: undefined})
+      }
+      const refApiConfig = {projectId: value._projectId, dataset: value._dataset}
+      return observeDocumentTypeFromId(value._ref, refApiConfig).pipe(
+        switchMap((typeName) => {
+          if (typeName) {
+            const refType = type.to.find((toType) => toType.type === typeName)
+            return observeForPreview(value, refType, {}, refApiConfig)
+          }
+          return observableOf({snapshot: undefined})
+        })
+      )
+    }
     if (isReferenceSchemaType(type)) {
       // if the value is of type reference, but has no _ref property, we cannot prepare any value for the preview
-      // and the most sane thing to do is to return `undefined` for snapshot
-      if (!value._ref) {
+      // and the most appropriate thing to do is to return `undefined` for snapshot
+      if (!isReference(value)) {
         return observableOf({snapshot: undefined})
       }
       // Previewing references actually means getting the referenced value,
@@ -46,10 +76,9 @@ export function createPreviewObserver(observePaths: (value: any, paths: Path[]) 
         })
       )
     }
-
-    const paths = getPreviewPaths(type)
+    const paths = getPreviewPaths(type.preview)
     if (paths) {
-      return observePaths(value, paths).pipe(
+      return observePaths(value, paths, apiConfig).pipe(
         map((snapshot) => ({
           type: type,
           snapshot: snapshot && prepareForPreview(snapshot, type, viewOptions),

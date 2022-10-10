@@ -9,6 +9,10 @@ export const Root = styled(Card)`
   height: 100%;
   flex-direction: column;
 
+  .sidebarPanes .Pane {
+    overflow: auto;
+  }
+
   .Resizer {
     background: var(--card-border-color);
     opacity: 1;
@@ -36,6 +40,7 @@ export const Root = styled(Card)`
     margin: 0 -5px;
     border-width: 0 5px;
     cursor: col-resize;
+    z-index: 2; /* To prevent the resizer from being hidden behind CodeMirror scroll area */
   }
 
   .Resizer.disabled {
@@ -59,6 +64,10 @@ export const Root = styled(Card)`
 
   .CodeMirror-linenumber {
     color: var(--card-code-fg-color);
+  }
+
+  .CodeMirror-scroll {
+    z-index: 2;
   }
 
   .CodeMirror-line,
@@ -91,6 +100,8 @@ export const Header = styled(Card)`
   border-bottom: 1px solid var(--card-border-color);
 `
 
+export const StyledLabel = styled(Label)``
+
 export const SplitpaneContainer = styled(Box)`
   position: relative;
 `
@@ -109,7 +120,7 @@ export const InputBackgroundContainer = styled(Box)`
   z-index: 10;
   right: 0;
 
-  ${Label} {
+  ${StyledLabel} {
     user-select: none;
   }
 `

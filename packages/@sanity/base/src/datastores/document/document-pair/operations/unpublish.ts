@@ -1,16 +1,18 @@
 import {omit} from 'lodash'
 import {versionedClient} from '../../../../client/versionedClient'
-import {OperationArgs} from '../../types'
 import {isLiveEditEnabled} from '../utils/isLiveEditEnabled'
+import {OperationImpl} from './types'
 
-export const unpublish = {
-  disabled: ({snapshots, typeName}: OperationArgs) => {
+type DisabledReason = 'LIVE_EDIT_ENABLED' | 'NOT_PUBLISHED'
+
+export const unpublish: OperationImpl<[], DisabledReason> = {
+  disabled: ({snapshots, typeName}) => {
     if (isLiveEditEnabled(typeName)) {
       return 'LIVE_EDIT_ENABLED'
     }
     return snapshots.published ? false : 'NOT_PUBLISHED'
   },
-  execute: ({idPair, snapshots}: OperationArgs) => {
+  execute: ({idPair, snapshots}) => {
     let tx = versionedClient.observable.transaction().delete(idPair.publishedId)
 
     if (snapshots.published) {
@@ -21,6 +23,12 @@ export const unpublish = {
       })
     }
 
-    return tx.commit({tag: 'document.unpublish'})
+    return tx.commit({
+      tag: 'document.unpublish',
+      // this disables referential integrity for cross-dataset references. we
+      // have this set because we warn against unpublishes in the `ConfirmDeleteDialog`
+      // UI. This operation is run when "unpublish anyway" is clicked
+      skipCrossDatasetReferenceValidation: true,
+    })
   },
 }

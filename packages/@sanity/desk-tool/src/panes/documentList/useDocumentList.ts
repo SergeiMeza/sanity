@@ -3,15 +3,15 @@ import {getQueryResults} from 'part:@sanity/base/query-container'
 import {useEffect, useState, useCallback, useMemo, useRef} from 'react'
 import {of} from 'rxjs'
 import {filter as filterEvents} from 'rxjs/operators'
-import {DocumentListPaneItem, QueryResult, SortOrder, SortOrderBy} from './types'
+import {DocumentListPaneItem, QueryResult, SortOrder} from './types'
 import {removePublishedWithDrafts, toOrderClause} from './helpers'
-import {DEFAULT_ORDERING, FULL_LIST_LIMIT, PARTIAL_PAGE_LIMIT} from './constants'
+import {FULL_LIST_LIMIT, PARTIAL_PAGE_LIMIT} from './constants'
 
 interface UseDocumentListOpts {
-  defaultOrdering: SortOrderBy[]
   filter: string
   params: Record<string, unknown>
   sortOrder?: SortOrder
+  apiVersion?: string
 }
 
 interface DocumentListState {
@@ -23,11 +23,13 @@ interface DocumentListState {
   onRetry?: (event: unknown) => void
 }
 
+const DEFAULT_ORDERING: SortOrder = {by: [{field: '_updatedAt', direction: 'desc'}]}
+
 /**
  * @internal
  */
 export function useDocumentList(opts: UseDocumentListOpts): DocumentListState {
-  const {defaultOrdering, filter, params, sortOrder} = opts
+  const {filter, params, sortOrder, apiVersion} = opts
   const [fullList, setFullList] = useState(false)
   const fullListRef = useRef(fullList)
   const [result, setResult] = useState<QueryResult | null>(null)
@@ -43,31 +45,22 @@ export function useDocumentList(opts: UseDocumentListOpts): DocumentListState {
     const extendedProjection = sortOrder?.extendedProjection
     const projectionFields = ['_id', '_type']
     const finalProjection = projectionFields.join(',')
-    const sortBy = sortOrder?.by || defaultOrdering || []
+    const sortBy = sortOrder?.by || []
     const limit = fullList ? FULL_LIST_LIMIT : PARTIAL_PAGE_LIMIT
     const sort = sortBy.length > 0 ? sortBy : DEFAULT_ORDERING.by
     const order = toOrderClause(sort)
 
     if (extendedProjection) {
       const firstProjection = projectionFields.concat(extendedProjection).join(',')
-
-      // At first glance, you might think that 'order' should come before 'slice'?
-      // However, this is actually a counter-bug
-      // to https://github.com/sanity-io/gradient/issues/922 which causes:
-      // 1. case-insensitive ordering (we want this)
-      // 2. null-values to sort to the top, even when order is desc (we don't want this)
-      // Because Studios in the wild rely on the buggy nature of this
-      // do not change this until we have API versioning
       return [
-        `*[${filter}] [0...${limit}]`,
-        `{${firstProjection}}`,
-        `order(${order})`,
+        `*[${filter}] {${firstProjection}}`,
+        `order(${order}) [0...${limit}]`,
         `{${finalProjection}}`,
       ].join('|')
     }
 
     return `*[${filter}]|order(${order})[0...${limit}]{${finalProjection}}`
-  }, [defaultOrdering, filter, fullList, sortOrder])
+  }, [filter, fullList, sortOrder])
 
   const handleListChange = useCallback(
     ({toIndex}: VirtualListChangeOpts) => {
@@ -95,14 +88,15 @@ export function useDocumentList(opts: UseDocumentListOpts): DocumentListState {
     // Set loading state
     setResult((r) => (r ? {...r, loading: true} : null))
 
-    const queryResults$ = getQueryResults(of({query, params}), {tag: 'desk.document-list'}).pipe(
-      filterEvents(filterFn)
-    )
+    const queryResults$ = getQueryResults(of({query, params}), {
+      tag: 'desk.document-list',
+      apiVersion,
+    }).pipe(filterEvents(filterFn))
 
     const sub = queryResults$.subscribe(setResult)
 
     return () => sub.unsubscribe()
-  }, [fullList, query, params])
+  }, [fullList, query, params, apiVersion])
 
   // If `filter` or `params` changed, set up a new query from scratch.
   // If `sortOrder` changed, set up a new query from scratch as well.
@@ -110,7 +104,7 @@ export function useDocumentList(opts: UseDocumentListOpts): DocumentListState {
     setResult(null)
     setFullList(false)
     fullListRef.current = false
-  }, [filter, params, sortOrder])
+  }, [filter, params, sortOrder, apiVersion])
 
   return {error, fullList, handleListChange, isLoading, items, onRetry}
 }
